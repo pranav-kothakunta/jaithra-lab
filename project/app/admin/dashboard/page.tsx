@@ -236,6 +236,7 @@ export default function AdminDashboard() {
         name: apt.name,
         phone: apt.phone,
         address: apt.address,
+        location: apt.location,
         collection_type: apt.collection_type || 'home_collection',
         booking_date: apt.preferred_date || new Date().toISOString().split('T')[0],
         total_amount: 0,
