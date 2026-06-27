@@ -170,6 +170,13 @@ export default function BookingPage() {
       setError('Name is required.');
       return;
     }
+    if (form.age) {
+      const ageNum = parseInt(form.age, 10);
+      if (isNaN(ageNum) || ageNum < 1 || ageNum > 100) {
+        setError('Please enter a valid age between 1 and 100.');
+        return;
+      }
+    }
     if (!form.address.trim() && !form.location.trim()) {
       setError('Provide an address or allow location access.');
       return;
@@ -304,6 +311,8 @@ export default function BookingPage() {
                       <Input
                         id="age"
                         type="number"
+                        min="1"
+                        max="100"
                         value={form.age}
                         onChange={(event) => setForm({ ...form, age: event.target.value })}
                         placeholder="e.g. 30"
