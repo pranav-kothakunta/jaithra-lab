@@ -230,23 +230,21 @@ export default function AdminDashboard() {
   };
 
   const convertAppointment = async (apt: AppointmentRequest) => {
-    const patientRes = await apiFetch(`${API}/patients`, {
-      method: 'POST',
-      body: JSON.stringify({
-        name: apt.name,
-        phone: apt.phone,
-        address: apt.address,
-        location: apt.location,
-        collection_type: apt.collection_type || 'home_collection',
-        booking_date: apt.preferred_date || new Date().toISOString().split('T')[0],
-        total_amount: 0,
-        tests: apt.requested_tests ? apt.requested_tests.split(',').map((t: string) => ({ test_name: t.trim(), price: 0 })) : [],
-      }),
-    });
-    if (patientRes.ok) {
-      await updateAppointment(apt.id, 'converted');
-      loadPatients();
-      loadStats();
+    try {
+      const res = await fetch('/api/admin/convert-appointment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId: apt.id }),
+      });
+      if (res.ok) {
+        loadAppointments();
+        loadPatients();
+        loadStats();
+      } else {
+        console.error('Failed to convert appointment');
+      }
+    } catch (err) {
+      console.error('Convert Error:', err);
     }
   };
 
