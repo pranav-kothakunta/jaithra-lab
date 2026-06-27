@@ -1,0 +1,13 @@
+{
+  "name": "project-bolt-workspace",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix project run dev",
+    "build": "npm --prefix project run build",
+    "start": "npm --prefix project run start",
+    "typecheck": "npm --prefix project run typecheck"
+  },
+  "dependencies": {
+    "typescript": "^6.0.3"
+  }
+}
