@@ -42,7 +42,7 @@ export default function BookingPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [patientId, setPatientId] = useState('');
-  const [availableTests, setAvailableTests] = useState<string[]>([]);
+  const [availableTests, setAvailableTests] = useState<{ name: string; price: number }[]>([]);
   const [selectedTests, setSelectedTests] = useState<string[]>([]);
 
   const formattedPhone = phone.replace(/\D/g, '');
@@ -98,11 +98,11 @@ export default function BookingPage() {
         );
         const { data, error } = await sb
           .from('tests')
-          .select('name')
+          .select('name, price')
           .eq('is_active', true)
           .order('category');
         if (error || !data) { setAvailableTests([]); return; }
-        setAvailableTests(data.map((t: { name: string }) => t.name).filter(Boolean));
+        setAvailableTests(data);
       } catch {
         setAvailableTests([]);
       }
@@ -120,7 +120,10 @@ export default function BookingPage() {
       : [];
 
     const tests = [
-      ...selectedTests.map((test_name) => ({ test_name, price: 0 })),
+      ...selectedTests.map((test_name) => {
+        const testObj = availableTests.find(t => t.name === test_name);
+        return { test_name, price: testObj ? Number(testObj.price) : 0 };
+      }),
       ...customTests,
     ];
 
@@ -423,11 +426,11 @@ export default function BookingPage() {
                             {availableTests.map((test) => (
                               <button
                                 type="button"
-                                key={test}
-                                onClick={() => handleToggleTest(test)}
-                                className={`rounded-xl border-2 px-4 py-2 text-sm font-medium transition-all hover:scale-105 ${selectedTests.includes(test) ? 'border-blue-600 bg-blue-50 text-blue-800 shadow-sm' : 'border-white bg-white/50 text-slate-700 hover:border-blue-300'}`}
+                                key={test.name}
+                                onClick={() => handleToggleTest(test.name)}
+                                className={`rounded-xl border-2 px-4 py-2 text-sm font-medium transition-all hover:scale-105 ${selectedTests.includes(test.name) ? 'border-blue-600 bg-blue-50 text-blue-800 shadow-sm' : 'border-white bg-white/50 text-slate-700 hover:border-blue-300'}`}
                               >
-                                {test}
+                                {test.name} {test.price > 0 && <span className="opacity-75 font-normal ml-1">- ₹{test.price}</span>}
                               </button>
                             ))}
                           </div>
