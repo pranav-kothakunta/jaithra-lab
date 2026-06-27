@@ -1,6 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseAdmin } from '@/lib/supabase/admin';
 
+async function sendAdminEmail(booking: any) {
+  const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (!adminEmail || !resendApiKey) return;
+
+  const html = `
+    <h2>New Appointment Request</h2>
+    <p><strong>Patient Name:</strong> ${booking.name}</p>
+    <p><strong>Phone:</strong> ${booking.phone}</p>
+    <p><strong>Age:</strong> ${booking.age || 'N/A'}</p>
+    <p><strong>Gender:</strong> ${booking.gender || 'N/A'}</p>
+    <p><strong>Collection Type:</strong> ${booking.collection_type}</p>
+    <p><strong>Date:</strong> ${booking.booking_date}</p>
+    <p><strong>Tests:</strong> ${booking.tests.length ? booking.tests.map((t:any) => t.test_name).join(', ') : 'None specified'}</p>
+    <br>
+    <a href="${process.env.NEXT_PUBLIC_SUPABASE_URL ? process.env.NEXT_PUBLIC_SUPABASE_URL.replace('.supabase.co', '') : 'https://jaithra-lab.vercel.app'}/admin/dashboard">View in Dashboard</a>
+  `;
+
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${resendApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: 'Jaithra Diagnostics <onboarding@resend.dev>',
+        to: adminEmail,
+        subject: `New Booking: ${booking.name}`,
+        html: html
+      })
+    });
+  } catch (err) {
+    console.error('Email send failed:', err);
+  }
+}
+
 // ── POST /api/booking ────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
@@ -73,6 +110,9 @@ export async function POST(req: NextRequest) {
 ║ Date:    ${appointmentDate.substring(0, 50).padEnd(50)}║
 ║ Type:    ${(collection_type === 'home_collection' ? 'Home Collection' : 'Lab Visit').padEnd(50)}║
 ╚════════════════════════════════════════════════════════════╝`);
+
+    // 4. Send email notification to Admin
+    await sendAdminEmail(body);
 
     return NextResponse.json({ success: true, patient_id: request.id, id: request.id }, { status: 201 });
   } catch (err) {
