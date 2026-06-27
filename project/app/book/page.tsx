@@ -7,8 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectItem } from '@/components/ui/select';
-import { ArrowRight, CheckCircle2, MapPin, Phone, ShieldCheck } from 'lucide-react';
-
+import { ArrowRight, CheckCircle2, MapPin, Phone, ShieldCheck, Calendar } from 'lucide-react';
 type BookingForm = {
   name: string;
   phone: string;
@@ -372,14 +371,22 @@ export default function BookingPage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="booking_date" className="text-sm font-semibold text-slate-700">Preferred date</Label>
-                      <Input
-                        id="booking_date"
-                        type="date"
-                        min={new Date().toISOString().split('T')[0]}
-                        value={form.booking_date}
-                        onChange={(event) => setForm({ ...form, booking_date: event.target.value })}
-                        className="w-full h-12 rounded-2xl border-2 border-white bg-white/50 px-4 text-slate-900 shadow-sm backdrop-blur-md focus:border-blue-500 focus:bg-white transition-all cursor-pointer [color-scheme:light]"
-                      />
+                      <div className="relative">
+                        <Input
+                          id="booking_date"
+                          type="date"
+                          min={new Date().toISOString().split('T')[0]}
+                          value={form.booking_date}
+                          onClick={(e) => {
+                            if ('showPicker' in e.currentTarget) {
+                              try { e.currentTarget.showPicker(); } catch (err) {}
+                            }
+                          }}
+                          onChange={(event) => setForm({ ...form, booking_date: event.target.value })}
+                          className="w-full h-12 rounded-2xl border-2 border-white bg-white/50 px-4 pl-12 text-slate-900 shadow-sm backdrop-blur-md focus:border-blue-500 focus:bg-white transition-all cursor-pointer [color-scheme:light]"
+                        />
+                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-600 pointer-events-none" />
+                      </div>
                     </div>
                   </div>
 
