@@ -16,7 +16,7 @@ async function sendAdminEmail(booking: any) {
     <p><strong>Date:</strong> ${booking.booking_date}</p>
     <p><strong>Tests:</strong> ${booking.tests.length ? booking.tests.map((t:any) => t.test_name).join(', ') : 'None specified'}</p>
     <br>
-    <a href="${process.env.NEXT_PUBLIC_SUPABASE_URL ? process.env.NEXT_PUBLIC_SUPABASE_URL.replace('.supabase.co', '') : 'https://jaithra-lab.vercel.app'}/admin/dashboard">View in Dashboard</a>
+    <a href="${process.env.NEXT_PUBLIC_SITE_URL || 'https://jaithra-lab.vercel.app'}/admin/dashboard" style="display:inline-block;padding:10px 20px;background-color:#2563eb;color:white;text-decoration:none;border-radius:5px;font-weight:bold;">View in Dashboard</a>
   `;
 
   try {
