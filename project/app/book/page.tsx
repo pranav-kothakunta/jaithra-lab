@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectItem } from '@/components/ui/select';
-import { ArrowRight, CheckCircle2, MapPin, Phone, ShieldCheck, Sparkles } from 'lucide-react';
+import { ArrowRight, CheckCircle2, MapPin, Phone, ShieldCheck } from 'lucide-react';
 
 type BookingForm = {
   name: string;
@@ -92,18 +92,18 @@ export default function BookingPage() {
   useEffect(() => {
     const loadTests = async () => {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-api/tests?active=true`, {
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-          },
-        });
-        if (!res.ok) {
-          setAvailableTests([]);
-          return;
-        }
-        const data: any[] = await res.json();
-        setAvailableTests(data.map((test) => test.name).filter(Boolean));
+        const { createClient } = await import('@supabase/supabase-js');
+        const sb = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        );
+        const { data, error } = await sb
+          .from('tests')
+          .select('name')
+          .eq('is_active', true)
+          .order('category');
+        if (error || !data) { setAvailableTests([]); return; }
+        setAvailableTests(data.map((t: { name: string }) => t.name).filter(Boolean));
       } catch {
         setAvailableTests([]);
       }
@@ -126,13 +126,9 @@ export default function BookingPage() {
     ];
 
     try {
-      const baseUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-api`;
-      const res = await fetch(`${baseUrl}/patients`, {
+      const res = await fetch('/api/booking', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: form.name,
           phone: form.phone,
@@ -196,141 +192,151 @@ export default function BookingPage() {
 
   return (
     <PublicLayout
-      title="Book a home collection appointment in minutes"
+      title="Book your test instantly"
       description="Enter your mobile number to continue, then confirm your booking details and location."
       compact
       showHero
     >
       {success && step === 4 ? (
-          <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-            <div className="flex items-center gap-3 rounded-3xl bg-teal-500/10 p-4 text-teal-700">
-              <CheckCircle2 className="h-6 w-6" />
+          <div className="rounded-[2.5rem] border border-white/60 bg-white/60 p-10 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl">
+            <div className="flex items-center gap-4 rounded-3xl bg-teal-500/10 p-5 text-teal-800 border border-teal-200/50 backdrop-blur-md">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-500 text-white shadow-lg shadow-teal-500/30">
+                <CheckCircle2 className="h-6 w-6" />
+              </div>
               <div>
-                <p className="text-lg font-semibold">Booking request submitted</p>
-                <p className="text-sm text-slate-600">Your appointment has been received and will be confirmed shortly.</p>
+                <p className="text-xl font-bold">Booking request submitted</p>
+                <p className="text-sm font-medium text-teal-700/80 mt-1">Your appointment has been received and will be confirmed shortly.</p>
               </div>
             </div>
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <div className="rounded-3xl bg-slate-50 p-5">
-                <p className="text-sm font-semibold text-slate-500">Mobile</p>
-                <p className="mt-2 text-base text-slate-900">{form.phone}</p>
+            <div className="mt-8 grid gap-5 sm:grid-cols-2">
+              <div className="rounded-3xl border border-white/60 bg-white/50 p-6 shadow-sm backdrop-blur-md">
+                <p className="text-sm font-bold uppercase tracking-wider text-slate-500">Mobile</p>
+                <p className="mt-2 text-xl font-bold text-slate-900">{form.phone}</p>
               </div>
-              <div className="rounded-3xl bg-slate-50 p-5">
-                <p className="text-sm font-semibold text-slate-500">Reference</p>
-                <p className="mt-2 text-base text-slate-900">{patientId || 'Pending'}</p>
+              <div className="rounded-3xl border border-white/60 bg-white/50 p-6 shadow-sm backdrop-blur-md">
+                <p className="text-sm font-bold uppercase tracking-wider text-slate-500">Reference ID</p>
+                <p className="mt-2 text-xl font-bold text-blue-600">{patientId || 'Pending'}</p>
               </div>
             </div>
 
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <Link href="/track" className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700">
+            <div className="mt-10 flex flex-col gap-4 sm:flex-row">
+              <Link href="/track" className="inline-flex items-center justify-center rounded-full bg-blue-600 px-8 py-4 text-base font-semibold text-white shadow-lg shadow-blue-600/20 transition-all hover:-translate-y-1 hover:bg-blue-700 hover:shadow-xl hover:shadow-blue-600/30">
                 Track Appointment
               </Link>
-              <Link href="/" className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+              <Link href="/" className="inline-flex items-center justify-center rounded-full border-2 border-slate-200/50 bg-white/50 px-8 py-4 text-base font-semibold text-slate-700 backdrop-blur-md transition-all hover:-translate-y-1 hover:bg-white hover:shadow-lg">
                 Back to Home
               </Link>
             </div>
           </div>
         ) : (
           <div className="space-y-8">
-            <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white p-8 shadow-xl shadow-slate-200/50">
-              <div className="flex items-center gap-3 text-slate-900">
-                <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-blue-600 text-white">
-                  <Phone className="h-6 w-6" />
+            <div className="relative overflow-hidden rounded-[2.5rem] border border-white/60 bg-white/60 p-10 shadow-[0_8px_30px_rgb(0,0,0,0.04)] backdrop-blur-xl">
+              <div className="flex items-center gap-5 text-slate-900">
+                <div className="flex h-16 w-16 items-center justify-center rounded-[20px] bg-gradient-to-br from-blue-600 to-teal-500 text-white shadow-lg shadow-blue-600/20">
+                  {step === 3 ? <ShieldCheck className="h-8 w-8" /> : <Phone className="h-8 w-8" />}
                 </div>
                 <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">Step {step} of 3</p>
-                  <h2 className="mt-1 text-2xl font-semibold">{step === 1 ? 'Verify your phone number' : step === 2 ? 'Enter your appointment details' : 'Review & confirm'}.</h2>
+                  <p className="text-sm font-bold uppercase tracking-[0.24em] text-blue-600">Step {step} of 3</p>
+                  <h2 className="mt-1 text-3xl font-extrabold leading-tight">
+                    {step === 1 ? 'Verify phone number' : step === 2 ? 'Appointment details' : 'Review & confirm'}
+                  </h2>
                 </div>
               </div>
 
-              {error && <div className="mt-6 rounded-3xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+              {error && <div className="mt-8 rounded-2xl border border-red-200/50 bg-red-50/80 backdrop-blur-md p-4 text-sm font-medium text-red-700 shadow-sm">{error}</div>}
 
               {step === 1 && (
-                <form onSubmit={handlePhoneSubmit} className="mt-8 space-y-6">
+                <form onSubmit={handlePhoneSubmit} className="mt-10 space-y-6 max-w-md">
                   <div className="space-y-3">
-                    <Label htmlFor="phone">Mobile number</Label>
+                    <Label htmlFor="phone" className="text-base font-semibold text-slate-700">Mobile number</Label>
                     <Input
                       id="phone"
                       type="tel"
                       value={phone}
                       onChange={(event) => setPhone(event.target.value)}
                       placeholder="Enter 10-digit mobile number"
-                      className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none"
+                      className="w-full h-14 rounded-2xl border-2 border-white bg-white/50 px-5 text-lg shadow-sm backdrop-blur-md focus:border-blue-500 focus:bg-white focus:ring-0 transition-all"
                     />
-                    {phoneError && <p className="text-sm text-red-600">{phoneError}</p>}
+                    {phoneError && <p className="text-sm font-medium text-red-600">{phoneError}</p>}
                   </div>
-                  <Button type="submit" className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700">
+                  <Button type="submit" className="h-14 w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-full bg-slate-900 px-8 text-base font-semibold text-white shadow-lg shadow-slate-900/20 transition-all hover:scale-105 hover:bg-slate-800 hover:shadow-xl hover:shadow-slate-900/30">
                     Continue
-                    <ArrowRight className="h-4 w-4" />
+                    <ArrowRight className="h-5 w-5" />
                   </Button>
                 </form>
               )}
 
               {step === 2 && (
-                <form onSubmit={handleSubmitDetails} className="mt-8 grid gap-6 md:grid-cols-2">
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="name">Full name</Label>
+                <form onSubmit={handleSubmitDetails} className="mt-10 grid gap-8 md:grid-cols-2">
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <Label htmlFor="name" className="text-sm font-semibold text-slate-700">Full name</Label>
                       <Input
                         id="name"
                         value={form.name}
                         onChange={(event) => setForm({ ...form, name: event.target.value })}
                         placeholder="Enter full name"
-                        className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none"
+                        className="h-12 rounded-2xl border-2 border-white bg-white/50 px-4 shadow-sm backdrop-blur-md focus:border-blue-500 focus:bg-white transition-all"
                       />
                     </div>
-                    <div>
-                      <Label htmlFor="phone-confirm">Mobile number</Label>
+                    <div className="space-y-2">
+                      <Label htmlFor="phone-confirm" className="text-sm font-semibold text-slate-700">Mobile number</Label>
                       <Input
                         id="phone-confirm"
                         value={form.phone}
                         disabled
-                        className="w-full rounded-3xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-500"
+                        className="h-12 rounded-2xl border-2 border-slate-100 bg-slate-50/50 px-4 text-slate-500 shadow-sm backdrop-blur-md cursor-not-allowed"
                       />
                     </div>
-                    <div>
-                      <Label htmlFor="age">Age</Label>
+                    <div className="space-y-2">
+                      <Label htmlFor="age" className="text-sm font-semibold text-slate-700">Age</Label>
                       <Input
                         id="age"
                         type="number"
                         value={form.age}
                         onChange={(event) => setForm({ ...form, age: event.target.value })}
                         placeholder="e.g. 30"
-                        className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none"
+                        className="h-12 rounded-2xl border-2 border-white bg-white/50 px-4 shadow-sm backdrop-blur-md focus:border-blue-500 focus:bg-white transition-all"
                       />
                     </div>
-                    <div>
-                      <Label htmlFor="gender">Gender</Label>
-                      <Select
-                        id="gender"
-                        value={form.gender}
-                        onValueChange={(value) => setForm({ ...form, gender: value as BookingForm['gender'] })}
-                        className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none"
-                      >
-                        <SelectItem value="male">Male</SelectItem>
-                        <SelectItem value="female">Female</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>
-                      </Select>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-slate-700">Gender</Label>
+                      <div className="flex gap-2">
+                        {['male', 'female', 'other'].map((g) => (
+                          <button
+                            key={g}
+                            type="button"
+                            onClick={() => setForm({ ...form, gender: g as BookingForm['gender'] })}
+                            className={`flex-1 h-12 rounded-2xl border-2 px-3 text-sm font-bold capitalize transition-all hover:scale-105 ${
+                              form.gender === g
+                                ? 'border-blue-600 bg-blue-50 text-blue-800 shadow-sm'
+                                : 'border-white bg-white/50 text-slate-600 hover:border-blue-300'
+                            }`}
+                          >
+                            {g}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="address">Address</Label>
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <Label htmlFor="address" className="text-sm font-semibold text-slate-700">Address</Label>
                       <Input
                         id="address"
                         value={form.address}
                         onChange={(event) => setForm({ ...form, address: event.target.value })}
                         placeholder="Street, locality, city"
-                        className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none"
+                        className="h-12 rounded-2xl border-2 border-white bg-white/50 px-4 shadow-sm backdrop-blur-md focus:border-blue-500 focus:bg-white transition-all"
                       />
                     </div>
-                    <div>
+                    <div className="space-y-2">
                       <div className="flex items-center justify-between gap-3">
-                        <Label htmlFor="location">Location coordinates</Label>
-                        <button type="button" onClick={handleUseLocation} className="inline-flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-800">
-                          <MapPin className="h-4 w-4" /> Use my location
+                        <Label htmlFor="location" className="text-sm font-semibold text-slate-700">Location coordinates</Label>
+                        <button type="button" onClick={handleUseLocation} className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors">
+                          <MapPin className="h-3.5 w-3.5" /> Auto-detect
                         </button>
                       </div>
                       <Input
@@ -338,73 +344,85 @@ export default function BookingPage() {
                         value={form.location}
                         onChange={(event) => setForm({ ...form, location: event.target.value })}
                         placeholder="Latitude, longitude"
-                        className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none"
+                        className="h-12 rounded-2xl border-2 border-white bg-white/50 px-4 shadow-sm backdrop-blur-md focus:border-blue-500 focus:bg-white transition-all"
                       />
-                      {locationMessage && <p className="mt-2 text-sm text-slate-500">{locationMessage}</p>}
+                      {locationMessage && <p className="text-xs font-medium text-slate-500">{locationMessage}</p>}
                     </div>
-                    <div>
-                      <Label htmlFor="collection_type">Collection type</Label>
-                      <Select
-                        id="collection_type"
-                        value={form.collection_type}
-                        onValueChange={(value) => setForm({ ...form, collection_type: value as BookingForm['collection_type'] })}
-                        className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none"
-                      >
-                        <SelectItem value="home_collection">Home collection</SelectItem>
-                        <SelectItem value="lab_visit">Lab visit</SelectItem>
-                      </Select>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-slate-700">Collection type</Label>
+                      <div className="flex gap-2">
+                        {[
+                          { id: 'home_collection', label: 'Home Collection' },
+                          { id: 'lab_visit', label: 'Lab Visit' }
+                        ].map((type) => (
+                          <button
+                            key={type.id}
+                            type="button"
+                            onClick={() => setForm({ ...form, collection_type: type.id as BookingForm['collection_type'] })}
+                            className={`flex-1 h-12 rounded-2xl border-2 px-3 text-sm font-bold transition-all hover:scale-105 ${
+                              form.collection_type === type.id
+                                ? 'border-blue-600 bg-blue-50 text-blue-800 shadow-sm'
+                                : 'border-white bg-white/50 text-slate-600 hover:border-blue-300'
+                            }`}
+                          >
+                            {type.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div>
-                      <Label htmlFor="booking_date">Preferred date</Label>
+                    <div className="space-y-2">
+                      <Label htmlFor="booking_date" className="text-sm font-semibold text-slate-700">Preferred date</Label>
                       <Input
                         id="booking_date"
                         type="date"
                         min={new Date().toISOString().split('T')[0]}
                         value={form.booking_date}
                         onChange={(event) => setForm({ ...form, booking_date: event.target.value })}
-                        className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none"
+                        className="h-12 rounded-2xl border-2 border-white bg-white/50 px-4 shadow-sm backdrop-blur-md focus:border-blue-500 focus:bg-white transition-all"
                       />
                     </div>
-                    <div>
-                      <Label htmlFor="tests_text">Choose tests</Label>
-                      <div className="grid gap-2 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                  </div>
+
+                  <div className="md:col-span-2 space-y-6 pt-4 border-t border-slate-200/50">
+                    <div className="space-y-3">
+                      <Label className="text-sm font-semibold text-slate-700">Choose Tests</Label>
+                      <div className="rounded-3xl border border-white/60 bg-white/40 p-5 shadow-inner backdrop-blur-md">
                         {availableTests.length > 0 ? (
-                          <div className="grid gap-2 sm:grid-cols-2">
+                          <div className="flex flex-wrap gap-3">
                             {availableTests.map((test) => (
                               <button
                                 type="button"
                                 key={test}
                                 onClick={() => handleToggleTest(test)}
-                                className={`rounded-2xl border px-4 py-2 text-left text-sm transition ${selectedTests.includes(test) ? 'border-blue-600 bg-blue-50 text-blue-900' : 'border-slate-200 bg-white text-slate-800 hover:border-slate-400'}`}
+                                className={`rounded-xl border-2 px-4 py-2 text-sm font-medium transition-all hover:scale-105 ${selectedTests.includes(test) ? 'border-blue-600 bg-blue-50 text-blue-800 shadow-sm' : 'border-white bg-white/50 text-slate-700 hover:border-blue-300'}`}
                               >
                                 {test}
                               </button>
                             ))}
                           </div>
                         ) : (
-                          <p className="text-sm text-slate-500">Loading available tests…</p>
+                          <p className="text-sm font-medium text-slate-500">Loading available tests…</p>
                         )}
                       </div>
-                      <p className="mt-2 text-xs text-slate-500">Select one or more tests from the list above.</p>
                     </div>
-                    <div>
-                      <Label htmlFor="tests_text">Additional custom tests</Label>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="tests_text" className="text-sm font-semibold text-slate-700">Custom Tests</Label>
                       <Input
                         id="tests_text"
                         value={form.tests_text}
                         onChange={(event) => setForm({ ...form, tests_text: event.target.value })}
-                        placeholder="Enter any custom tests separated by commas"
-                        className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none"
+                        placeholder="e.g. Vitamin D, B12 (comma separated)"
+                        className="h-12 rounded-2xl border-2 border-white bg-white/50 px-4 shadow-sm backdrop-blur-md focus:border-blue-500 focus:bg-white transition-all"
                       />
-                      <p className="mt-2 text-xs text-slate-500">Optional — use this only if the test is not listed above.</p>
                     </div>
                   </div>
 
-                  <div className="md:col-span-2 flex flex-col gap-3 pt-2">
-                    <Button type="submit" className="inline-flex items-center justify-center rounded-full bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700">
-                      Continue to confirmation
+                  <div className="md:col-span-2 flex flex-col gap-4 pt-6 sm:flex-row">
+                    <Button type="submit" className="h-14 inline-flex items-center justify-center rounded-full bg-blue-600 px-8 text-base font-semibold text-white shadow-lg shadow-blue-600/20 transition-all hover:scale-105 hover:bg-blue-700 hover:shadow-xl hover:shadow-blue-600/30">
+                      Review details
                     </Button>
-                    <Button type="button" variant="outline" onClick={() => setStep(1)} className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                    <Button type="button" variant="outline" onClick={() => setStep(1)} className="h-14 inline-flex items-center justify-center rounded-full border-2 border-slate-200/50 bg-white/50 px-8 text-base font-semibold text-slate-700 backdrop-blur-md transition-all hover:bg-white hover:shadow-md">
                       Back
                     </Button>
                   </div>
@@ -412,54 +430,42 @@ export default function BookingPage() {
               )}
 
               {step === 3 && (
-                <div className="mt-8 space-y-6">
-                  <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-6">
-                    <div className="flex items-center gap-3 text-slate-900">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-teal-500 text-white">
-                        <ShieldCheck className="h-6 w-6" />
-                      </div>
-                      <div>
-                        <p className="text-lg font-semibold">Confirm your booking details</p>
-                        <p className="text-sm text-slate-600">We will send a confirmation once a technician is assigned.</p>
-                      </div>
+                <div className="mt-10 space-y-8">
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <div className="rounded-3xl border border-white/60 bg-white/50 p-6 shadow-sm backdrop-blur-md transition-all hover:bg-white">
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Patient Name</p>
+                      <p className="text-lg font-bold text-slate-900">{form.name}</p>
+                      <p className="text-sm font-medium text-slate-500 mt-1">{form.age} Yrs • {form.gender}</p>
                     </div>
-
-                    <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                      <div className="rounded-3xl bg-white p-5 shadow-sm">
-                        <p className="text-sm text-slate-500">Name</p>
-                        <p className="mt-2 text-base text-slate-900">{form.name}</p>
-                      </div>
-                      <div className="rounded-3xl bg-white p-5 shadow-sm">
-                        <p className="text-sm text-slate-500">Phone</p>
-                        <p className="mt-2 text-base text-slate-900">{form.phone}</p>
-                      </div>
-                      <div className="rounded-3xl bg-white p-5 shadow-sm">
-                        <p className="text-sm text-slate-500">Address / Location</p>
-                        <p className="mt-2 text-base text-slate-900">{form.address || form.location || 'Not provided'}</p>
-                      </div>
-                      <div className="rounded-3xl bg-white p-5 shadow-sm">
-                        <p className="text-sm text-slate-500">Appointment</p>
-                        <p className="mt-2 text-base text-slate-900 capitalize">{form.collection_type.replace('_', ' ')}</p>
-                        <p className="text-sm text-slate-500">Preferred date: {form.booking_date}</p>
-                      </div>
-                      <div className="rounded-3xl bg-white p-5 shadow-sm">
-                        <p className="text-sm text-slate-500">Selected Tests</p>
-                        <p className="mt-2 text-base text-slate-900">
-                          {selectedTests.length > 0 ? selectedTests.join(', ') : 'No tests selected'}
-                        </p>
-                        {form.tests_text.trim() && (
-                          <p className="mt-2 text-sm text-slate-500">Custom: {form.tests_text}</p>
-                        )}
+                    <div className="rounded-3xl border border-white/60 bg-white/50 p-6 shadow-sm backdrop-blur-md transition-all hover:bg-white">
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Contact</p>
+                      <p className="text-lg font-bold text-slate-900">+91 {form.phone}</p>
+                    </div>
+                    <div className="sm:col-span-2 rounded-3xl border border-white/60 bg-white/50 p-6 shadow-sm backdrop-blur-md transition-all hover:bg-white">
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Address & Location</p>
+                      <p className="text-base font-medium text-slate-900 leading-relaxed">{form.address || 'No address provided'}</p>
+                      {form.location && <p className="text-sm font-medium text-blue-600 mt-1 flex items-center gap-1"><MapPin className="h-3 w-3" /> {form.location}</p>}
+                    </div>
+                    <div className="rounded-3xl border border-white/60 bg-white/50 p-6 shadow-sm backdrop-blur-md transition-all hover:bg-white">
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Appointment Info</p>
+                      <p className="text-lg font-bold text-slate-900 capitalize">{form.collection_type.replace('_', ' ')}</p>
+                      <p className="text-sm font-medium text-slate-500 mt-1">Date: {new Date(form.booking_date).toLocaleDateString('en-IN', { dateStyle: 'medium'})}</p>
+                    </div>
+                    <div className="rounded-3xl border border-white/60 bg-white/50 p-6 shadow-sm backdrop-blur-md transition-all hover:bg-white">
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Tests Requested</p>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {selectedTests.map(t => <span key={t} className="inline-block px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full">{t}</span>)}
+                        {form.tests_text && form.tests_text.split(',').map(t => t.trim()).filter(Boolean).map(t => <span key={t} className="inline-block px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-full">{t}</span>)}
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-3 sm:flex-row">
-                    <Button onClick={createBooking} disabled={isLoading} className="inline-flex items-center justify-center rounded-full bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700">
-                      {isLoading ? 'Submitting…' : 'Confirm Booking'}
+                  <div className="flex flex-col gap-4 sm:flex-row pt-4">
+                    <Button onClick={createBooking} disabled={isLoading} className="h-14 inline-flex items-center justify-center rounded-full bg-gradient-to-r from-blue-600 to-teal-500 px-8 text-base font-bold text-white shadow-lg shadow-blue-600/30 transition-all hover:scale-105 hover:shadow-xl hover:shadow-blue-600/40">
+                      {isLoading ? 'Submitting request...' : 'Confirm & Book'}
                     </Button>
-                    <Button type="button" variant="outline" onClick={() => setStep(2)} className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                      Edit details
+                    <Button type="button" variant="outline" onClick={() => setStep(2)} className="h-14 inline-flex items-center justify-center rounded-full border-2 border-slate-200/50 bg-white/50 px-8 text-base font-semibold text-slate-700 backdrop-blur-md transition-all hover:bg-white hover:shadow-md">
+                      Make Changes
                     </Button>
                   </div>
                 </div>

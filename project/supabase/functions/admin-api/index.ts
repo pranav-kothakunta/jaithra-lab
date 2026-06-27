@@ -255,45 +255,7 @@ Deno.serve(async (req: Request) => {
 ╚════════════════════════════════════════════════════════════╝
           `);
 
-          // Try sending via email service if configured
-          const resendApiKey = Deno.env.get("RESEND_API_KEY");
-          if (resendApiKey) {
-            try {
-              const emailSubject = `New Appointment: ${name} - ${appointmentDate}`;
-              const emailRes = await fetch("https://api.resend.com/emails", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "Authorization": `Bearer ${resendApiKey}`,
-                },
-                body: JSON.stringify({
-                  from: "noreply@jaithra-lab.com",
-                  to: adminUser.email,
-                  subject: emailSubject,
-                  html: `
-                    <html>
-                      <body style="font-family: Arial; line-height: 1.6;">
-                        <h2>New Appointment Received</h2>
-                        <p><strong>Patient:</strong> ${name}</p>
-                        <p><strong>Phone:</strong> +91 ${phone}</p>
-                        <p><strong>Date:</strong> ${appointmentDate}</p>
-                        <p><strong>Collection Type:</strong> ${collectionLabel}</p>
-                        <p><strong>Patient ID:</strong> ${pid}</p>
-                        <p><strong>Address:</strong> ${address || 'Not provided'}</p>
-                        <hr/>
-                        <p>Log in to your admin dashboard to confirm this appointment.</p>
-                      </body>
-                    </html>
-                  `,
-                }),
-              });
-              if (emailRes.ok) {
-                console.log(`✓ Email sent to admin: ${adminUser.email}`);
-              }
-            } catch (emailError) {
-              console.error("Email send error:", emailError);
-            }
-          } else {
+           else {
             console.log(`ℹ Email service not configured. Set RESEND_API_KEY to enable email notifications.`);
           }
         }

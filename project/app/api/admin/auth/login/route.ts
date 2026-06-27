@@ -1,44 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyPassword, createToken, hashPassword } from '@/lib/auth';
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { createSupabaseAdmin } from '@/lib/supabase/admin';
+import { verifyPassword, createToken } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
   try {
     const { email, password } = await req.json();
+
     if (!email || !password) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
     }
 
-    // Use edge function to look up user (bypasses RLS via service role)
-    const userRes = await fetch(`${SUPABASE_URL}/functions/v1/admin-api/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': ANON_KEY },
-      body: JSON.stringify({ email: email.toLowerCase().trim() }),
-    });
+    const supabase = createSupabaseAdmin();
 
-    if (!userRes.ok) {
+    // Fetch user from DB
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, email, name, role, password_hash')
+      .eq('email', email.toLowerCase().trim())
+      .single();
+
+    if (error || !user) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 
-    const user = await userRes.json();
-
+    // Verify password
     const valid = await verifyPassword(password, user.password_hash);
     if (!valid) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 
-    // Auto-upgrade plaintext passwords to bcrypt
-    if (!user.password_hash.startsWith('$2')) {
-      const hashed = await hashPassword(password);
-      await fetch(`${SUPABASE_URL}/functions/v1/admin-api/upgrade-password`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'apikey': ANON_KEY },
-        body: JSON.stringify({ id: user.id, password_hash: hashed }),
-      });
-    }
-
+    // Create JWT token
     const token = await createToken({
       userId: user.id,
       email: user.email,
@@ -46,21 +37,23 @@ export async function POST(req: NextRequest) {
       role: user.role,
     });
 
-    const res = NextResponse.json({
+    // Set HTTP-only cookie
+    const response = NextResponse.json({
+      success: true,
       user: { id: user.id, email: user.email, name: user.name, role: user.role },
     });
 
-    res.cookies.set('admin_token', token, {
+    response.cookies.set('admin_session', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7,
+      maxAge: 60 * 60 * 24 * 7, // 7 days
       path: '/',
     });
 
-    return res;
+    return response;
   } catch (err) {
     console.error('Login error:', err);
-    return NextResponse.json({ error: 'Login failed' }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

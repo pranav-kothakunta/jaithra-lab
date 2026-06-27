@@ -47,7 +47,12 @@ import {
   FileCheck,
   AlertCircle,
   IndianRupee,
+  UserPlus,
+  Activity,
+  RefreshCw,
+  MapPin,
 } from 'lucide-react';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { DashboardStats, AppointmentRequest, Patient, Test, Payment, Report } from '@/lib/types';
 
@@ -61,14 +66,17 @@ async function apiFetch(url: string, opts?: RequestInit) {
   return fetch(url, { ...opts, headers: { ...API_HEADERS, ...(opts?.headers || {}) } });
 }
 
-type Tab = 'dashboard' | 'appointments' | 'patients' | 'tests' | 'payments' | 'reports';
+type Tab = 'dashboard' | 'appointments' | 'patients' | 'add_patient' | 'tests' | 'add_test' | 'payments' | 'record_payment' | 'reports';
 
 const tabs: { id: Tab; label: string; icon: any }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: TrendingUp },
   { id: 'appointments', label: 'Appointments', icon: Calendar },
   { id: 'patients', label: 'Patients', icon: Users },
+  { id: 'add_patient', label: 'Add Patient', icon: UserPlus },
   { id: 'tests', label: 'Tests', icon: TestTube },
+  { id: 'add_test', label: 'Add Test', icon: Plus },
   { id: 'payments', label: 'Payments', icon: CreditCard },
+  { id: 'record_payment', label: 'Record Payment', icon: IndianRupee },
   { id: 'reports', label: 'Reports', icon: FileText },
 ];
 
@@ -83,6 +91,7 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [stats, setStats] = useState<ExtendedStats | null>(null);
   const [appointments, setAppointments] = useState<AppointmentRequest[]>([]);
+  const [isRefreshingAppointments, setIsRefreshingAppointments] = useState(false);
   const [appointmentsError, setAppointmentsError] = useState('');
   const [appointmentsDebug, setAppointmentsDebug] = useState<string>('');
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -92,13 +101,11 @@ export default function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(true);
 
   // Dialogs
-  const [patientDialog, setPatientDialog] = useState(false);
   const [editPatient, setEditPatient] = useState<Patient | null>(null);
-  const [testDialog, setTestDialog] = useState(false);
   const [editTest, setEditTest] = useState<Test | null>(null);
-  const [paymentDialog, setPaymentDialog] = useState(false);
   const [paymentPatientId, setPaymentPatientId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [patientFormError, setPatientFormError] = useState('');
 
   // Report upload
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -141,27 +148,32 @@ export default function AdminDashboard() {
   }, []);
 
   const loadAppointments = useCallback(async () => {
-    setAppointmentsError('');
-    setAppointmentsDebug('');
-    const res = await apiFetch(`${API}/appointments`);
-    const text = await res.text();
-    if (!res.ok) {
-      const message = `Failed to load appointments: ${res.status} ${res.statusText}`;
-      console.error(message, text);
-      setAppointmentsError(message);
-      setAppointmentsDebug(text);
-      setAppointments([]);
-      return;
-    }
+    setIsRefreshingAppointments(true);
     try {
-      const data = JSON.parse(text);
-      setAppointments(data);
-      setAppointmentsDebug(JSON.stringify(data.slice(0, 5), null, 2));
-    } catch (err) {
-      console.error('Invalid appointments JSON', err, text);
-      setAppointmentsError('Unable to parse appointments response');
-      setAppointmentsDebug(text);
-      setAppointments([]);
+      setAppointmentsError('');
+      setAppointmentsDebug('');
+      const res = await apiFetch(`${API}/appointments`);
+      const text = await res.text();
+      if (!res.ok) {
+        const message = `Failed to load appointments: ${res.status} ${res.statusText}`;
+        console.error(message, text);
+        setAppointmentsError(message);
+        setAppointmentsDebug(text);
+        setAppointments([]);
+        return;
+      }
+      try {
+        const data = JSON.parse(text);
+        setAppointments(data);
+        setAppointmentsDebug(JSON.stringify(data.slice(0, 5), null, 2));
+      } catch (err) {
+        console.error('Invalid appointments JSON', err, text);
+        setAppointmentsError('Unable to parse appointments response');
+        setAppointmentsDebug(text);
+        setAppointments([]);
+      }
+    } finally {
+      setIsRefreshingAppointments(false);
     }
   }, []);
 
@@ -239,12 +251,14 @@ export default function AdminDashboard() {
 
   const openNewPatient = () => {
     setEditPatient(null);
+    setPatientFormError('');
     setPForm({ name: '', phone: '', age: '', gender: '', address: '', collection_type: 'home_collection', booking_date: new Date().toISOString().split('T')[0], total_amount: '', tests_text: '' });
-    setPatientDialog(true);
+    setActiveTab('add_patient');
   };
 
   const openEditPatient = (p: Patient) => {
     setEditPatient(p);
+    setPatientFormError('');
     setPForm({
       name: p.name,
       phone: p.phone,
@@ -256,11 +270,16 @@ export default function AdminDashboard() {
       total_amount: p.total_amount?.toString() || '',
       tests_text: p.tests?.map(t => t.test_name).join(', ') || '',
     });
-    setPatientDialog(true);
+    setActiveTab('add_patient');
   };
 
   const savePatient = async (e: React.FormEvent) => {
     e.preventDefault();
+    setPatientFormError('');
+    if (!pForm.name.trim() || !pForm.phone.trim()) {
+      setPatientFormError('Name and phone are required');
+      return;
+    }
     setIsSubmitting(true);
     try {
       const body: any = {
@@ -274,14 +293,24 @@ export default function AdminDashboard() {
         total_amount: Number(pForm.total_amount || 0),
         tests: pForm.tests_text ? pForm.tests_text.split(',').map(t => ({ test_name: t.trim(), price: 0 })) : [],
       };
+      let res;
       if (editPatient) {
-        await apiFetch(`${API}/patients`, { method: 'PATCH', body: JSON.stringify({ id: editPatient.id, ...body, tests: undefined }) });
+        res = await apiFetch(`${API}/patients`, { method: 'PATCH', body: JSON.stringify({ id: editPatient.id, ...body, tests: undefined }) });
       } else {
-        await apiFetch(`${API}/patients`, { method: 'POST', body: JSON.stringify(body) });
+        res = await apiFetch(`${API}/patients`, { method: 'POST', body: JSON.stringify(body) });
       }
-      setPatientDialog(false);
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        setPatientFormError(errorData.error || 'Failed to save patient');
+        return;
+      }
+
+      setActiveTab('patients');
       loadPatients();
       loadStats();
+    } catch (err) {
+      setPatientFormError('Network error occurred while saving.');
     } finally {
       setIsSubmitting(false);
     }
@@ -296,7 +325,7 @@ export default function AdminDashboard() {
   const openNewTest = () => {
     setEditTest(null);
     setTForm({ name: '', description: '', price: '', category: '', report_delivery_time: '', preparation_instructions: '', is_active: true });
-    setTestDialog(true);
+    setActiveTab('add_test');
   };
 
   const openEditTest = (t: Test) => {
@@ -310,7 +339,7 @@ export default function AdminDashboard() {
       preparation_instructions: t.preparation_instructions || '',
       is_active: t.is_active,
     });
-    setTestDialog(true);
+    setActiveTab('add_test');
   };
 
   const saveTest = async (e: React.FormEvent) => {
@@ -322,7 +351,7 @@ export default function AdminDashboard() {
       } else {
         await apiFetch(`${API}/tests`, { method: 'POST', body: JSON.stringify({ ...tForm, price: Number(tForm.price) }) });
       }
-      setTestDialog(false);
+      setActiveTab('tests');
       loadTests();
     } finally {
       setIsSubmitting(false);
@@ -332,7 +361,7 @@ export default function AdminDashboard() {
   const openPaymentDialog = (patientId: string) => {
     setPaymentPatientId(patientId);
     setPayForm({ amount: '', payment_method: 'cash', notes: '' });
-    setPaymentDialog(true);
+    setActiveTab('record_payment');
   };
 
   const savePayment = async (e: React.FormEvent) => {
@@ -343,9 +372,9 @@ export default function AdminDashboard() {
         method: 'POST',
         body: JSON.stringify({ patient_id: paymentPatientId, ...payForm, amount: Number(payForm.amount) }),
       });
-      setPaymentDialog(false);
       setPayForm({ amount: '', payment_method: 'cash', notes: '' });
       setPaymentPatientId('');
+      setActiveTab('payments');
       loadPayments();
       loadPatients();
       loadStats();
@@ -430,21 +459,21 @@ export default function AdminDashboard() {
 
   const statusColor: Record<string, string> = {
     new_request: 'bg-blue-100 text-blue-700',
-    confirmed: 'bg-yellow-100 text-yellow-700',
-    converted: 'bg-green-100 text-green-700',
+    confirmed: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/50 dark:text-yellow-400 dark:border-yellow-900',
+    converted: 'bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-400 dark:border-green-900',
     rejected: 'bg-red-100 text-red-700',
-    booked: 'bg-gray-100 text-gray-700',
-    collection_pending: 'bg-yellow-100 text-yellow-700',
+    booked: 'bg-gray-100 dark:bg-slate-800/50 text-gray-700 dark:text-gray-200',
+    collection_pending: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/50 dark:text-yellow-400 dark:border-yellow-900',
     sample_collected: 'bg-blue-100 text-blue-700',
     testing: 'bg-orange-100 text-orange-700',
-    report_ready: 'bg-green-100 text-green-700',
+    report_ready: 'bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-400 dark:border-green-900',
     completed: 'bg-teal-100 text-teal-700',
   };
 
   const paymentStatusColor: Record<string, string> = {
-    paid: 'bg-green-100 text-green-700',
-    partial: 'bg-yellow-100 text-yellow-700',
-    unpaid: 'bg-red-100 text-red-600',
+    paid: 'bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-400 dark:border-green-900',
+    partial: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/50 dark:text-yellow-400 dark:border-yellow-900',
+    unpaid: 'bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400 dark:border-red-900',
   };
 
   // Payment reconciliation helpers
@@ -456,8 +485,12 @@ export default function AdminDashboard() {
 
   if (!user) return null;
 
+  const displayName = user?.email
+    ? user.email.split('@')[0].split(/[\.\-_]/).map((s: string) => s.charAt(0).toUpperCase() + s.slice(1)).join(' ')
+    : user?.name || 'Admin';
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-50/50 via-white to-cyan-50/50 dark:from-indigo-950/20 dark:via-slate-950 dark:to-cyan-950/20 font-sans">
       {/* Hidden file input for report upload */}
       <input
         ref={fileInputRef}
@@ -467,105 +500,172 @@ export default function AdminDashboard() {
         onChange={handleFileSelected}
       />
 
-      {/* Top Bar */}
-      <header className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-teal-500 rounded-lg flex items-center justify-center">
-              <FlaskConical className="w-4 h-4 text-white" />
-            </div>
-            <span className="font-bold text-gray-900">Jaithra Lab</span>
-            <span className="text-xs text-gray-400 hidden sm:inline">Admin</span>
+      {/* Top Bar with Integrated Navigation */}
+      <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800/60 shadow-sm">
+        <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 h-16 flex items-center justify-between">
+          
+          {/* Logo Section */}
+          <div className="flex items-center gap-3 w-auto lg:w-1/4">
+            <img src="/logo.jpg" alt="Jaithra Lab Logo" className="w-10 h-10 object-contain rounded-lg shadow-md" />
+            <span className="font-extrabold text-xl text-slate-900 dark:text-white tracking-tight hidden sm:block">Jaithra Lab</span>
           </div>
-          <div className="flex items-center gap-3">
+
+          {/* Desktop Navigation */}
+          <nav className="hidden lg:flex items-center gap-1 flex-1 justify-center bg-slate-100/50 dark:bg-slate-900/50 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800/50">
+            {tabs.filter(t => !['add_patient', 'add_test', 'record_payment'].includes(t.id)).map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-all duration-300 ${
+                  activeTab === tab.id
+                    ? 'text-indigo-700 bg-white dark:bg-slate-900 shadow-sm border border-indigo-100/50 ring-1 ring-indigo-50'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200/50'
+                }`}
+              >
+                <tab.icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-white' : 'text-slate-400'}`} />
+                {tab.label}
+                {tab.id === 'appointments' && stats && stats.new_appointment_requests > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold shadow-sm border-2 border-white">
+                    {stats.new_appointment_requests}
+                  </span>
+                )}
+              </button>
+            ))}
+          </nav>
+
+          {/* Profile / Alerts Section */}
+          <div className="flex items-center gap-3 w-auto lg:w-1/4 justify-end">
             {stats && stats.new_appointment_requests > 0 && (
-              <Badge className="bg-red-50 text-red-600 border-red-200">
-                <Bell className="w-3 h-3 mr-1" />
-                {stats.new_appointment_requests} new
+              <Badge className="bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/50 shadow-sm px-3 py-1 lg:hidden">
+                <Bell className="w-3.5 h-3.5 mr-1.5" />
+                {stats.new_appointment_requests}
               </Badge>
             )}
-            <span className="text-sm text-gray-600 hidden sm:block">{user.name}</span>
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
-              <LogOut className="w-4 h-4" />
-            </Button>
+            <ThemeToggle />
+            <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 pl-3 pr-1 py-1 rounded-full border border-slate-100 dark:border-slate-800">
+              <span className="text-sm font-medium text-slate-600 dark:text-slate-300 hidden sm:block">{displayName}</span>
+              <Button variant="ghost" size="sm" onClick={handleLogout} className="h-8 w-8 rounded-full p-0 text-slate-400 hover:text-red-600 hover:bg-red-50">
+                <LogOut className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         </div>
-      </header>
 
-      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6">
-        {/* Tab Navigation */}
-        <div className="flex gap-1 mb-6 overflow-x-auto pb-1">
-          {tabs.map(tab => (
+        {/* Mobile Navigation (Scrollable) */}
+        <div className="lg:hidden flex overflow-x-auto px-4 py-3 gap-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 pb-3">
+          {tabs.filter(t => !['add_patient', 'add_test', 'record_payment'].includes(t.id)).map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
                 activeTab === tab.id
-                  ? 'bg-gradient-to-r from-blue-600 to-teal-500 text-white shadow-md'
-                  : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                  ? 'bg-gradient-to-r from-indigo-600 to-cyan-500 text-white shadow-lg shadow-indigo-500/25 border-transparent'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'
               }`}
             >
               <tab.icon className="w-4 h-4" />
               {tab.label}
               {tab.id === 'appointments' && stats && stats.new_appointment_requests > 0 && (
-                <span className="w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
+                <span className="w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold ml-1">
                   {stats.new_appointment_requests}
                 </span>
               )}
             </button>
           ))}
         </div>
+      </header>
+
+      <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 py-8">
 
         {/* DASHBOARD TAB */}
         {activeTab === 'dashboard' && stats && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {[
-                { label: "Today's Patients", value: stats.todays_patients, icon: Users, color: 'from-blue-500 to-blue-600' },
-                { label: 'Active Patients', value: stats.active_patients, icon: Users, color: 'from-teal-500 to-teal-600' },
-                { label: 'Pending Reports', value: stats.pending_reports, icon: FileText, color: 'from-orange-500 to-orange-600' },
-                { label: 'Reports Sent', value: stats.reports_sent, icon: CheckCircle2, color: 'from-green-500 to-green-600' },
-                { label: 'Monthly Revenue', value: formatCurrency(stats.monthly_revenue), icon: IndianRupee, color: 'from-blue-600 to-indigo-600' },
-                { label: 'Collected This Month', value: formatCurrency(stats.monthly_collected || 0), icon: TrendingUp, color: 'from-teal-600 to-cyan-600' },
-                { label: 'Home Pending', value: stats.home_collections_pending, icon: Home, color: 'from-yellow-500 to-orange-500' },
-                { label: 'Outstanding', value: formatCurrency(stats.total_outstanding || 0), icon: AlertCircle, color: 'from-red-500 to-pink-500' },
-              ].map(({ label, value, icon: Icon, color }) => (
-                <div key={label} className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-                  <div className={`w-10 h-10 bg-gradient-to-br ${color} rounded-xl flex items-center justify-center mb-3`}>
-                    <Icon className="w-5 h-5 text-white" />
-                  </div>
-                  <p className="text-2xl font-bold text-gray-900">{value}</p>
-                  <p className="text-xs text-gray-500 mt-1">{label}</p>
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Welcome Banner */}
+            <div className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-indigo-900 via-purple-900 to-slate-900 p-8 sm:p-10 text-white shadow-2xl shadow-indigo-900/20 border border-white/10">
+              <div className="absolute -right-20 -top-20 h-96 w-96 rounded-full bg-gradient-to-br from-indigo-500/40 via-fuchsia-500/30 to-teal-400/20 blur-3xl" />
+              <div className="absolute -left-20 -bottom-20 h-72 w-72 rounded-full bg-gradient-to-tr from-cyan-500/30 to-blue-500/20 blur-3xl" />
+              <div className="relative z-10 max-w-2xl">
+                <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-3">
+                  Welcome back, {displayName.split(' ')[0]}! 👋
+                </h1>
+                <p className="text-slate-300 text-lg font-medium leading-relaxed">
+                  Here is your lab's performance at a glance. You have <strong className="text-white">{stats.new_appointment_requests}</strong> new requests and <strong className="text-white">{stats.pending_reports}</strong> reports pending upload.
+                </p>
+                <div className="mt-8 flex gap-4 flex-wrap">
+                  <button onClick={openNewPatient} className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-bold text-indigo-900 shadow-lg shadow-white/20 hover:bg-gradient-to-r hover:from-indigo-500 hover:to-cyan-500 hover:text-white hover:border-transparent hover:shadow-md hover:scale-105 transition-all duration-300">
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    New Patient
+                  </button>
+                  <button onClick={() => setActiveTab('appointments')} className="inline-flex items-center justify-center rounded-full bg-white/10 border border-white/20 px-6 py-3 text-sm font-bold text-white shadow-sm transition-all hover:bg-white/20 hover:scale-105">
+                    <Calendar className="mr-2 h-4 w-4 text-cyan-300" />
+                    View Appointments
+                  </button>
                 </div>
-              ))}
+              </div>
             </div>
 
-            {/* Quick actions */}
-            <div className="grid sm:grid-cols-3 gap-4">
-              <button onClick={openNewPatient} className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-200 transition-all text-left group">
-                <div className="flex items-center justify-between mb-2">
-                  <Plus className="w-5 h-5 text-blue-600" />
-                  <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-blue-400 transition-colors" />
-                </div>
-                <p className="font-bold text-gray-900 text-sm">Add Patient</p>
-                <p className="text-xs text-gray-500">Register a new patient visit</p>
-              </button>
-              <button onClick={() => setActiveTab('appointments')} className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md hover:border-teal-200 transition-all text-left group">
-                <div className="flex items-center justify-between mb-2">
-                  <Calendar className="w-5 h-5 text-teal-600" />
-                  <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-teal-400 transition-colors" />
-                </div>
-                <p className="font-bold text-gray-900 text-sm">View Appointments</p>
-                <p className="text-xs text-gray-500">{stats.new_appointment_requests} new requests</p>
-              </button>
-              <button onClick={() => setActiveTab('reports')} className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md hover:border-orange-200 transition-all text-left group">
-                <div className="flex items-center justify-between mb-2">
-                  <FileText className="w-5 h-5 text-orange-600" />
-                  <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-orange-400 transition-colors" />
-                </div>
-                <p className="font-bold text-gray-900 text-sm">Manage Reports</p>
-                <p className="text-xs text-gray-500">{stats.pending_reports} pending upload</p>
-              </button>
+            {/* Overview Stats */}
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4 px-1">Overview</h2>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+                {[
+                  { label: "Today's Patients", value: stats.todays_patients, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
+                  { label: 'Active Patients', value: stats.active_patients, icon: Activity, color: 'text-teal-600', bg: 'bg-teal-50', border: 'border-teal-100' },
+                  { label: 'Pending Reports', value: stats.pending_reports, icon: FileText, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
+                  { label: 'Reports Sent', value: stats.reports_sent, icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
+                  { label: 'Monthly Revenue', value: formatCurrency(stats.monthly_revenue), icon: IndianRupee, color: 'text-white', bg: 'bg-indigo-50', border: 'border-indigo-100' },
+                  { label: 'Collected This Month', value: formatCurrency(stats.monthly_collected || 0), icon: TrendingUp, color: 'text-cyan-600', bg: 'bg-cyan-50', border: 'border-cyan-100' },
+                  { label: 'Home Pending', value: stats.home_collections_pending, icon: Home, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100' },
+                  { label: 'Outstanding', value: formatCurrency(stats.total_outstanding || 0), icon: AlertCircle, color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-100' },
+                ].map(({ label, value, icon: Icon, color, bg, border }) => (
+                  <div key={label} className="group relative overflow-hidden bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-[0_4px_20px_rgb(0,0,0,0.03)] transition-all hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] hover:-translate-y-1">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className={`w-12 h-12 ${bg} ${border} border rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 group-hover:rotate-3`}>
+                        <Icon className={`w-6 h-6 ${color}`} />
+                      </div>
+                    </div>
+                    <h3 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">{value}</h3>
+                    <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 mt-1">{label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4 px-1">Quick Actions</h2>
+              <div className="grid sm:grid-cols-3 gap-5">
+                <button onClick={openNewPatient} className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-[0_4px_20px_rgb(0,0,0,0.03)] hover:shadow-lg hover:border-blue-200 transition-all text-left group">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <UserPlus className="w-5 h-5" />
+                    </div>
+                    <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
+                  </div>
+                  <h4 className="font-bold text-slate-900 dark:text-white text-lg mb-1">Add Patient</h4>
+                  <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Register a new patient visit</p>
+                </button>
+                <button onClick={() => setActiveTab('appointments')} className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-[0_4px_20px_rgb(0,0,0,0.03)] hover:shadow-lg hover:border-teal-200 transition-all text-left group">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="w-10 h-10 bg-teal-50 text-teal-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <Calendar className="w-5 h-5" />
+                    </div>
+                    <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-teal-500 group-hover:translate-x-1 transition-all" />
+                  </div>
+                  <h4 className="font-bold text-slate-900 dark:text-white text-lg mb-1">View Appointments</h4>
+                  <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{stats.new_appointment_requests} new requests pending</p>
+                </button>
+                <button onClick={() => setActiveTab('reports')} className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-100 dark:border-slate-800 shadow-[0_4px_20px_rgb(0,0,0,0.03)] hover:shadow-lg hover:border-orange-200 transition-all text-left group">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="w-10 h-10 bg-orange-50 text-orange-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-orange-500 group-hover:translate-x-1 transition-all" />
+                  </div>
+                  <h4 className="font-bold text-slate-900 dark:text-white text-lg mb-1">Manage Reports</h4>
+                  <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{stats.pending_reports} pending upload</p>
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -575,22 +675,27 @@ export default function AdminDashboard() {
           <div className="space-y-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
-                <h2 className="text-lg font-bold text-gray-900">Appointment Requests</h2>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white">Appointment Requests</h2>
                 <Badge variant="secondary">{appointments.filter(a => a.status === 'new_request').length} new</Badge>
               </div>
-              <button onClick={loadAppointments} className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
-                Refresh
+              <button 
+                onClick={loadAppointments} 
+                disabled={isRefreshingAppointments}
+                className="inline-flex items-center justify-center rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-sm hover:bg-gradient-to-r hover:from-indigo-500 hover:to-cyan-500 hover:text-white hover:border-transparent hover:shadow-md transition-all duration-300 dark:bg-slate-900/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefreshingAppointments ? 'animate-spin text-blue-600' : 'text-slate-400'}`} />
+                {isRefreshingAppointments ? 'Refreshing...' : 'Refresh'}
               </button>
             </div>
             {appointmentsError ? (
               <div className="rounded-3xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
                 <p className="font-semibold">Unable to load appointment requests</p>
                 <p className="mt-2">{appointmentsError}</p>
-                <button onClick={loadAppointments} className="mt-4 inline-flex items-center rounded-full bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700">
+                <button onClick={loadAppointments} className="mt-4 inline-flex items-center rounded-full bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 transition-all duration-300">
                   Retry
                 </button>
                 {appointmentsDebug && (
-                  <pre className="mt-4 overflow-x-auto rounded-xl bg-white p-3 text-left text-xs text-slate-700 border border-red-100">{appointmentsDebug}</pre>
+                  <pre className="mt-4 overflow-x-auto rounded-xl bg-white dark:bg-slate-900 p-3 text-left text-xs text-slate-700 dark:text-slate-200 border border-red-100">{appointmentsDebug}</pre>
                 )}
               </div>
             ) : appointments.length === 0 ? (
@@ -601,18 +706,28 @@ export default function AdminDashboard() {
             ) : (
               <div className="space-y-3">
                 {appointments.map(apt => (
-                  <div key={apt.id} className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
+                  <div key={apt.id} className="bg-white dark:bg-slate-900 rounded-xl p-5 border border-gray-100 dark:border-slate-800 shadow-sm">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <p className="font-bold text-gray-900">{apt.name}</p>
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColor[apt.status] || 'bg-gray-100 text-gray-600'}`}>
+                          <p className="font-bold text-gray-900 dark:text-white">{apt.name}</p>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColor[apt.status] || 'bg-gray-100 dark:bg-slate-800/50 text-gray-600 dark:text-gray-300'}`}>
                             {apt.status.replace('_', ' ')}
                           </span>
                         </div>
-                        <div className="flex flex-wrap gap-3 text-xs text-gray-500">
+                        <div className="flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400">
                           <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{apt.phone}</span>
                           {apt.address && <span className="flex items-center gap-1"><Home className="w-3 h-3" />{apt.address}</span>}
+                          {apt.location && apt.collection_type !== 'lab_visit' && (
+                            <a href={`https://maps.google.com/?q=${apt.location}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline">
+                              <MapPin className="w-3 h-3" /> View on Map
+                            </a>
+                          )}
+                          {apt.collection_type === 'lab_visit' && (
+                            <a href="https://maps.app.goo.gl/XQNAahxHV4H5as7z5" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-teal-600 dark:text-teal-400 hover:underline">
+                              <MapPin className="w-3 h-3" /> Lab Location
+                            </a>
+                          )}
                           {apt.preferred_date && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{formatDate(apt.preferred_date)}</span>}
                           {apt.requested_tests && <span className="flex items-center gap-1"><TestTube className="w-3 h-3" />{apt.requested_tests}</span>}
                         </div>
@@ -645,7 +760,7 @@ export default function AdminDashboard() {
         {activeTab === 'patients' && (
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Patients</h2>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Patients</h2>
               <div className="flex gap-2 w-full sm:w-auto">
                 <div className="relative flex-1 sm:flex-initial">
                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -667,34 +782,44 @@ export default function AdminDashboard() {
                 <p>No patients found</p>
               </div>
             ) : (
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-100 bg-gray-50/50">
-                        <th className="text-left py-3 px-4 font-semibold text-gray-600">Patient</th>
-                        <th className="text-left py-3 px-4 font-semibold text-gray-600">Collection</th>
-                        <th className="text-left py-3 px-4 font-semibold text-gray-600">Amount</th>
-                        <th className="text-left py-3 px-4 font-semibold text-gray-600">Payment</th>
-                        <th className="text-left py-3 px-4 font-semibold text-gray-600">Test Status</th>
-                        <th className="text-left py-3 px-4 font-semibold text-gray-600">Report</th>
-                        <th className="text-right py-3 px-4 font-semibold text-gray-600">Actions</th>
+                      <tr className="border-b border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-900/50">
+                        <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Patient</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Collection</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Amount</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Payment</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Test Status</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Report</th>
+                        <th className="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {patients.map(p => (
-                        <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                        <tr key={p.id} className="border-b border-gray-50 dark:border-slate-800 hover:bg-gray-50/50 dark:hover:bg-slate-900/50 dark:bg-slate-900/50">
                           <td className="py-3 px-4">
-                            <p className="font-semibold text-gray-900">{p.name}</p>
+                            <p className="font-semibold text-gray-900 dark:text-white">{p.name}</p>
                             <p className="text-xs text-gray-400">{p.patient_id} | {p.phone}</p>
                             {p.age && <p className="text-xs text-gray-400">{p.age}y {p.gender || ''}</p>}
+                            {p.location && (
+                              <a href={`https://maps.google.com/?q=${p.location}`} target="_blank" rel="noopener noreferrer" className="text-xs flex items-center gap-1 mt-1 text-blue-600 dark:text-blue-400 hover:underline w-max">
+                                <MapPin className="w-3 h-3" /> View Map
+                              </a>
+                            )}
                           </td>
                           <td className="py-3 px-4">
-                            <span className="text-xs capitalize text-gray-600">{p.collection_type?.replace('_', ' ')}</span>
+                            <span className="text-xs capitalize text-gray-600 dark:text-gray-300">{p.collection_type?.replace('_', ' ')}</span>
                             <p className="text-xs text-gray-400">{formatDate(p.booking_date)}</p>
+                            {p.collection_type === 'lab_visit' && (
+                              <a href="https://maps.app.goo.gl/XQNAahxHV4H5as7z5" target="_blank" rel="noopener noreferrer" className="text-xs flex items-center gap-1 mt-1 text-teal-600 dark:text-teal-400 hover:underline w-max">
+                                <MapPin className="w-3 h-3" /> Lab Location
+                              </a>
+                            )}
                           </td>
                           <td className="py-3 px-4">
-                            <p className="font-medium text-gray-900">{formatCurrency(p.total_amount)}</p>
+                            <p className="font-medium text-gray-900 dark:text-white">{formatCurrency(p.total_amount)}</p>
                             <p className="text-xs text-gray-400">Paid: {formatCurrency(p.amount_paid)}</p>
                             {p.remaining_amount > 0 && (
                               <p className="text-xs text-red-500 font-medium">Due: {formatCurrency(p.remaining_amount)}</p>
@@ -732,7 +857,7 @@ export default function AdminDashboard() {
                               </span>
                             ) : (
                               <div className="flex items-center gap-1">
-                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${p.report_status === 'uploaded' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${p.report_status === 'uploaded' ? 'bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-400 dark:border-green-900' : 'bg-gray-100 dark:bg-slate-800/50 text-gray-500 dark:text-gray-400'}`}>
                                   {p.report_status === 'uploaded' ? 'Uploaded' : 'Pending'}
                                 </span>
                               </div>
@@ -766,20 +891,154 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* ADD PATIENT TAB */}
+        {activeTab === 'add_patient' && (
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white">{editPatient ? 'Edit Patient Details' : 'Register New Patient'}</h2>
+                <p className="text-slate-500 dark:text-slate-400 mt-1">{editPatient ? 'Update information and current status.' : 'Fill in the details to record a new patient visit.'}</p>
+              </div>
+              <Button variant="outline" onClick={() => setActiveTab('patients')}>Cancel</Button>
+            </div>
+            
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-6 sm:p-8">
+              <form onSubmit={savePatient} className="space-y-8">
+                {patientFormError && (
+                  <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm border border-red-200 flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                    {patientFormError}
+                  </div>
+                )}
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-6">
+                  {/* Left Column */}
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Full Name *</Label>
+                      <Input value={pForm.name} onChange={e => setPForm(f => ({ ...f, name: e.target.value }))} className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 focus-visible:ring-blue-500" placeholder="e.g. John Doe" required />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Phone Number *</Label>
+                      <Input value={pForm.phone} onChange={e => setPForm(f => ({ ...f, phone: e.target.value }))} className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 focus-visible:ring-blue-500" placeholder="10-digit number" required />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Age</Label>
+                        <Input type="number" value={pForm.age} onChange={e => setPForm(f => ({ ...f, age: e.target.value }))} className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 focus-visible:ring-blue-500" placeholder="Years" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Gender</Label>
+                        <Select value={pForm.gender || '_none'} onValueChange={v => setPForm(f => ({ ...f, gender: v === '_none' ? '' : v }))}>
+                          <SelectTrigger className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 focus:ring-blue-500"><SelectValue placeholder="Select" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="_none">Not specified</SelectItem>
+                            <SelectItem value="male">Male</SelectItem>
+                            <SelectItem value="female">Female</SelectItem>
+                            <SelectItem value="other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Address</Label>
+                      <Textarea value={pForm.address} onChange={e => setPForm(f => ({ ...f, address: e.target.value }))} className="resize-none h-32 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 focus-visible:ring-blue-500" placeholder="Full residential address" />
+                    </div>
+                  </div>
+                  
+                  {/* Right Column */}
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Collection Type</Label>
+                        <Select value={pForm.collection_type} onValueChange={v => setPForm(f => ({ ...f, collection_type: v }))}>
+                          <SelectTrigger className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 focus:ring-blue-500"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="home_collection">Home Collection</SelectItem>
+                            <SelectItem value="lab_visit">Lab Visit</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Booking Date</Label>
+                        <Input type="date" value={pForm.booking_date} onChange={e => setPForm(f => ({ ...f, booking_date: e.target.value }))} className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 focus-visible:ring-blue-500" />
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Total Amount</Label>
+                      <Input type="number" value={pForm.total_amount} onChange={e => setPForm(f => ({ ...f, total_amount: e.target.value }))} className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 focus-visible:ring-blue-500" placeholder="₹0" />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Requested Tests</Label>
+                      <Textarea value={pForm.tests_text} onChange={e => setPForm(f => ({ ...f, tests_text: e.target.value }))} placeholder="e.g. CBC, Lipid Profile, Thyroid" className="resize-none h-32 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 focus-visible:ring-blue-500" />
+                    </div>
+                    
+                    {editPatient && (
+                      <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                        <div className="space-y-2">
+                          <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Test Status</Label>
+                          <Select
+                            value={editPatient.test_status}
+                            onValueChange={v => { updatePatientStatus(editPatient.id, 'test_status', v); setEditPatient({ ...editPatient, test_status: v as any }); }}
+                          >
+                            <SelectTrigger className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {['booked', 'collection_pending', 'sample_collected', 'testing', 'report_ready', 'completed'].map(s => (
+                                <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Report Status</Label>
+                          <Select
+                            value={editPatient.report_status}
+                            onValueChange={v => { updatePatientStatus(editPatient.id, 'report_status', v); setEditPatient({ ...editPatient, report_status: v as any }); }}
+                          >
+                            <SelectTrigger className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="not_uploaded">Not Uploaded</SelectItem>
+                              <SelectItem value="uploaded">Uploaded</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
+                  <Button type="button" variant="ghost" onClick={() => setActiveTab('patients')} className="h-14 px-8 text-base font-semibold">
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={isSubmitting} className="h-14 px-10 text-base font-bold bg-gradient-to-r from-blue-600 to-teal-500 text-white rounded-full shadow-lg shadow-blue-500/20 hover:scale-105 transition-all">
+                    {isSubmitting ? 'Saving...' : editPatient ? 'Update Patient' : 'Save Patient'}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         {/* TESTS TAB */}
         {activeTab === 'tests' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Test Catalogue</h2>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Test Catalogue</h2>
               <Button size="sm" onClick={openNewTest} className="bg-gradient-to-r from-blue-600 to-teal-500 text-white">
                 <Plus className="w-4 h-4 mr-1" />Add Test
               </Button>
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {tests.map(t => (
-                <div key={t.id} className={`bg-white rounded-xl p-5 border shadow-sm transition-all ${t.is_active ? 'border-gray-100' : 'border-gray-200 opacity-60'}`}>
+                <div key={t.id} className={`bg-white dark:bg-slate-900 rounded-xl p-5 border shadow-sm transition-all ${t.is_active ? 'border-gray-100 dark:border-slate-800' : 'border-gray-200 dark:border-slate-800 opacity-60'}`}>
                   <div className="flex items-start justify-between mb-2">
-                    <h3 className="font-bold text-gray-900 text-sm">{t.name}</h3>
+                    <h3 className="font-bold text-gray-900 dark:text-white text-sm">{t.name}</h3>
                     {t.is_active ? (
                       <Badge className="bg-green-50 text-green-700 text-[10px]">Active</Badge>
                     ) : (
@@ -787,12 +1046,12 @@ export default function AdminDashboard() {
                     )}
                   </div>
                   {t.category && <p className="text-xs text-gray-400 mb-2">{t.category}</p>}
-                  {t.description && <p className="text-xs text-gray-500 mb-3 line-clamp-2">{t.description}</p>}
+                  {t.description && <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 line-clamp-2">{t.description}</p>}
                   <div className="flex items-end justify-between">
-                    <p className="text-lg font-bold text-gray-900">{formatCurrency(t.price)}</p>
+                    <p className="text-lg font-bold text-gray-900 dark:text-white">{formatCurrency(t.price)}</p>
                     {t.report_delivery_time && <p className="text-xs text-teal-600 font-medium">{t.report_delivery_time}</p>}
                   </div>
-                  <div className="flex gap-1 mt-3 pt-3 border-t border-gray-100">
+                  <div className="flex gap-1 mt-3 pt-3 border-t border-gray-100 dark:border-slate-800">
                     <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => openEditTest(t)}>Edit</Button>
                     <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => {
                       apiFetch(`${API}/tests`, { method: 'PATCH', body: JSON.stringify({ id: t.id, is_active: !t.is_active }) }).then(loadTests);
@@ -811,35 +1070,35 @@ export default function AdminDashboard() {
           <div className="space-y-5">
             {/* Reconciliation Summary */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-                <p className="text-xs text-gray-500 mb-1">Total Collected</p>
-                <p className="text-xl font-bold text-gray-900">{formatCurrency(totalCollected)}</p>
+              <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-gray-100 dark:border-slate-800 shadow-sm">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Total Collected</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">{formatCurrency(totalCollected)}</p>
               </div>
-              <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-                <p className="text-xs text-gray-500 mb-1">Outstanding</p>
+              <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-gray-100 dark:border-slate-800 shadow-sm">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Outstanding</p>
                 <p className="text-xl font-bold text-red-600">{formatCurrency(stats?.total_outstanding || 0)}</p>
               </div>
-              <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-                <p className="text-xs text-gray-500 mb-2">By Method</p>
+              <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-gray-100 dark:border-slate-800 shadow-sm">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">By Method</p>
                 <div className="space-y-1">
                   {Object.entries(methodBreakdown).map(([method, amt]) => (
                     <div key={method} className="flex justify-between text-xs">
-                      <span className="capitalize text-gray-600">{method}</span>
-                      <span className="font-semibold text-gray-900">{formatCurrency(amt)}</span>
+                      <span className="capitalize text-gray-600 dark:text-gray-300">{method}</span>
+                      <span className="font-semibold text-gray-900 dark:text-white">{formatCurrency(amt)}</span>
                     </div>
                   ))}
                   {Object.keys(methodBreakdown).length === 0 && <p className="text-xs text-gray-400">No payments</p>}
                 </div>
               </div>
-              <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-                <p className="text-xs text-gray-500 mb-1">Transactions</p>
-                <p className="text-xl font-bold text-gray-900">{payments.length}</p>
+              <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-gray-100 dark:border-slate-800 shadow-sm">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Transactions</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">{payments.length}</p>
                 <p className="text-xs text-gray-400 mt-0.5">all time</p>
               </div>
             </div>
 
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Payment Transactions</h2>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Payment Transactions</h2>
               <Button size="sm" onClick={() => openPaymentDialog('')} className="bg-gradient-to-r from-blue-600 to-teal-500 text-white">
                 <Plus className="w-4 h-4 mr-1" />Record Payment
               </Button>
@@ -850,29 +1109,29 @@ export default function AdminDashboard() {
                 <p>No payments recorded</p>
               </div>
             ) : (
-              <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-100 bg-gray-50/50">
-                        <th className="text-left py-3 px-4 font-semibold text-gray-600">Date</th>
-                        <th className="text-left py-3 px-4 font-semibold text-gray-600">Patient</th>
-                        <th className="text-left py-3 px-4 font-semibold text-gray-600">Amount</th>
-                        <th className="text-left py-3 px-4 font-semibold text-gray-600">Method</th>
-                        <th className="text-left py-3 px-4 font-semibold text-gray-600">Notes</th>
+                      <tr className="border-b border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-900/50">
+                        <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Date</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Patient</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Amount</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Method</th>
+                        <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Notes</th>
                       </tr>
                     </thead>
                     <tbody>
                       {payments.map(p => (
-                        <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                          <td className="py-3 px-4 text-gray-600">{formatDate(p.payment_date || p.created_at)}</td>
+                        <tr key={p.id} className="border-b border-gray-50 dark:border-slate-800 hover:bg-gray-50/50 dark:hover:bg-slate-900/50 dark:bg-slate-900/50">
+                          <td className="py-3 px-4 text-gray-600 dark:text-gray-300">{formatDate(p.payment_date || p.created_at)}</td>
                           <td className="py-3 px-4">
-                            <p className="font-medium text-gray-900">{p.patients?.name || 'N/A'}</p>
+                            <p className="font-medium text-gray-900 dark:text-white">{p.patients?.name || 'N/A'}</p>
                             <p className="text-xs text-gray-400">{p.patients?.patient_id}</p>
                           </td>
-                          <td className="py-3 px-4 font-bold text-gray-900">{formatCurrency(p.amount)}</td>
+                          <td className="py-3 px-4 font-bold text-gray-900 dark:text-white">{formatCurrency(p.amount)}</td>
                           <td className="py-3 px-4">
-                            <span className="capitalize text-gray-600 text-xs font-medium bg-gray-100 px-2 py-0.5 rounded-full">{p.payment_method}</span>
+                            <span className="capitalize text-gray-600 dark:text-gray-300 text-xs font-medium bg-gray-100 dark:bg-slate-800/50 px-2 py-0.5 rounded-full">{p.payment_method}</span>
                           </td>
                           <td className="py-3 px-4 text-gray-400 text-xs">{p.notes || '-'}</td>
                         </tr>
@@ -890,7 +1149,7 @@ export default function AdminDashboard() {
           <div className="space-y-5">
             {/* Patients needing reports */}
             <div>
-              <h3 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
+              <h3 className="text-base font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-orange-500" />
                 Pending Report Upload
                 <span className="text-xs font-normal text-gray-400">({patients.filter(p => p.report_status === 'not_uploaded' && p.status === 'active').length} patients)</span>
@@ -901,27 +1160,27 @@ export default function AdminDashboard() {
                   <p className="text-sm font-medium">All active patients have reports uploaded.</p>
                 </div>
               ) : (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-gray-100 bg-orange-50/50">
-                          <th className="text-left py-3 px-4 font-semibold text-gray-600">Patient</th>
-                          <th className="text-left py-3 px-4 font-semibold text-gray-600">Booking Date</th>
-                          <th className="text-left py-3 px-4 font-semibold text-gray-600">Test Status</th>
-                          <th className="text-right py-3 px-4 font-semibold text-gray-600">Upload</th>
+                        <tr className="border-b border-gray-100 dark:border-slate-800 bg-orange-50/50">
+                          <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Patient</th>
+                          <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Booking Date</th>
+                          <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Test Status</th>
+                          <th className="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Upload</th>
                         </tr>
                       </thead>
                       <tbody>
                         {patients.filter(p => p.report_status === 'not_uploaded' && p.status === 'active').map(p => (
-                          <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                          <tr key={p.id} className="border-b border-gray-50 dark:border-slate-800 hover:bg-gray-50/50 dark:hover:bg-slate-900/50 dark:bg-slate-900/50">
                             <td className="py-3 px-4">
-                              <p className="font-semibold text-gray-900">{p.name}</p>
+                              <p className="font-semibold text-gray-900 dark:text-white">{p.name}</p>
                               <p className="text-xs text-gray-400">{p.patient_id} | {p.phone}</p>
                             </td>
-                            <td className="py-3 px-4 text-gray-600">{formatDate(p.booking_date)}</td>
+                            <td className="py-3 px-4 text-gray-600 dark:text-gray-300">{formatDate(p.booking_date)}</td>
                             <td className="py-3 px-4">
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColor[p.test_status] || 'bg-gray-100 text-gray-600'}`}>
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColor[p.test_status] || 'bg-gray-100 dark:bg-slate-800/50 text-gray-600 dark:text-gray-300'}`}>
                                 {p.test_status?.replace(/_/g, ' ')}
                               </span>
                             </td>
@@ -951,46 +1210,46 @@ export default function AdminDashboard() {
 
             {/* Uploaded reports */}
             <div>
-              <h3 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
+              <h3 className="text-base font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
                 <FileCheck className="w-4 h-4 text-green-500" />
                 Uploaded Reports
                 <span className="text-xs font-normal text-gray-400">({reports.length} reports)</span>
               </h3>
               {reports.length === 0 ? (
-                <div className="text-center py-12 text-gray-400 bg-white rounded-xl border border-gray-100">
+                <div className="text-center py-12 text-gray-400 bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800">
                   <FileText className="w-10 h-10 mx-auto mb-3 opacity-40" />
                   <p>No reports uploaded yet</p>
                 </div>
               ) : (
-                <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-gray-100 bg-gray-50/50">
-                          <th className="text-left py-3 px-4 font-semibold text-gray-600">File Name</th>
-                          <th className="text-left py-3 px-4 font-semibold text-gray-600">Patient</th>
-                          <th className="text-left py-3 px-4 font-semibold text-gray-600">Uploaded</th>
-                          <th className="text-left py-3 px-4 font-semibold text-gray-600">Size</th>
-                          <th className="text-right py-3 px-4 font-semibold text-gray-600">Actions</th>
+                        <tr className="border-b border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-900/50">
+                          <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">File Name</th>
+                          <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Patient</th>
+                          <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Uploaded</th>
+                          <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Size</th>
+                          <th className="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {reports.map(r => {
                           const patient = patients.find(p => p.id === r.patient_id);
                           return (
-                            <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                            <tr key={r.id} className="border-b border-gray-50 dark:border-slate-800 hover:bg-gray-50/50 dark:hover:bg-slate-900/50 dark:bg-slate-900/50">
                               <td className="py-3 px-4">
                                 <div className="flex items-center gap-2">
                                   <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                                  <span className="text-gray-900 font-medium truncate max-w-[200px]">{r.file_name}</span>
+                                  <span className="text-gray-900 dark:text-white font-medium truncate max-w-[200px]">{r.file_name}</span>
                                 </div>
                               </td>
                               <td className="py-3 px-4">
-                                <p className="font-medium text-gray-900">{patient?.name || 'Unknown'}</p>
+                                <p className="font-medium text-gray-900 dark:text-white">{patient?.name || 'Unknown'}</p>
                                 <p className="text-xs text-gray-400">{patient?.patient_id || r.patient_id?.slice(0, 8)}</p>
                               </td>
-                              <td className="py-3 px-4 text-gray-600">{formatDate(r.created_at)}</td>
-                              <td className="py-3 px-4 text-gray-500 text-xs">
+                              <td className="py-3 px-4 text-gray-600 dark:text-gray-300">{formatDate(r.created_at)}</td>
+                              <td className="py-3 px-4 text-gray-500 dark:text-gray-400 text-xs">
                                 {r.file_size ? `${(r.file_size / 1024).toFixed(0)} KB` : '-'}
                               </td>
                               <td className="py-3 px-4 text-right">
@@ -998,7 +1257,7 @@ export default function AdminDashboard() {
                                   <Button size="sm" variant="ghost" onClick={() => downloadReport(r.id, r.file_name)} className="text-blue-600 hover:bg-blue-50">
                                     <Download className="w-3 h-3 mr-1" />Download
                                   </Button>
-                                  <Button size="sm" variant="ghost" onClick={() => { if (patient) triggerReportUpload(patient.id); }} className="text-gray-500 hover:bg-gray-100" title="Re-upload">
+                                  <Button size="sm" variant="ghost" onClick={() => { if (patient) triggerReportUpload(patient.id); }} className="text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:bg-slate-800/50" title="Re-upload">
                                     <Upload className="w-3 h-3" />
                                   </Button>
                                   <Button size="sm" variant="ghost" onClick={() => deleteReport(r.id)} className="text-red-500 hover:bg-red-50">
@@ -1017,229 +1276,166 @@ export default function AdminDashboard() {
             </div>
           </div>
         )}
+
+        {/* ADD TEST TAB */}
+        {activeTab === 'add_test' && (
+          <div className="max-w-2xl mx-auto space-y-6">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white">{editTest ? 'Edit Test' : 'Add New Test'}</h2>
+                <p className="text-slate-500 dark:text-slate-400 mt-1">{editTest ? 'Update test details in the catalogue.' : 'Add a new test to the catalogue.'}</p>
+              </div>
+              <Button variant="outline" onClick={() => setActiveTab('tests')}>Cancel</Button>
+            </div>
+            
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-6 sm:p-8">
+              <form onSubmit={saveTest} className="space-y-6">
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Test Name *</Label>
+                  <Input value={tForm.name} onChange={e => setTForm(f => ({ ...f, name: e.target.value }))} className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800" required />
+                </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Price *</Label>
+                    <Input type="number" value={tForm.price} onChange={e => setTForm(f => ({ ...f, price: e.target.value }))} className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800" required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Category</Label>
+                    <Input value={tForm.category} onChange={e => setTForm(f => ({ ...f, category: e.target.value }))} className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800" placeholder="e.g. Blood, Urine" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Report Delivery Time</Label>
+                  <Input value={tForm.report_delivery_time} onChange={e => setTForm(f => ({ ...f, report_delivery_time: e.target.value }))} className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800" placeholder="e.g. 24 hours" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Description</Label>
+                  <Textarea value={tForm.description} onChange={e => setTForm(f => ({ ...f, description: e.target.value }))} className="resize-none h-24 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Preparation Instructions</Label>
+                  <Textarea value={tForm.preparation_instructions} onChange={e => setTForm(f => ({ ...f, preparation_instructions: e.target.value }))} className="resize-none h-24 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800" placeholder="e.g. Fasting 10-12 hrs required" />
+                </div>
+                <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <input type="checkbox" id="is_active" checked={tForm.is_active} onChange={e => setTForm(f => ({ ...f, is_active: e.target.checked }))} className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  <Label htmlFor="is_active" className="text-sm font-semibold text-slate-700 dark:text-slate-200 cursor-pointer">Test is Active</Label>
+                </div>
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
+                  <Button type="button" variant="ghost" onClick={() => setActiveTab('tests')} className="h-14 px-8 text-base font-semibold">
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={isSubmitting} className="h-14 px-10 text-base font-bold bg-gradient-to-r from-blue-600 to-teal-500 text-white rounded-full shadow-lg shadow-blue-500/20 hover:scale-105 transition-all">
+                    {isSubmitting ? 'Saving...' : editTest ? 'Update Test' : 'Add Test'}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* RECORD PAYMENT TAB */}
+        {activeTab === 'record_payment' && (
+          <div className="max-w-xl mx-auto space-y-6">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white">Record Payment</h2>
+                <p className="text-slate-500 dark:text-slate-400 mt-1">Add a payment record for a patient</p>
+              </div>
+              <Button variant="outline" onClick={() => setActiveTab('payments')}>Cancel</Button>
+            </div>
+            
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-6 sm:p-8">
+              <form onSubmit={savePayment} className="space-y-6">
+                {!paymentPatientId && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Select Patient *</Label>
+                    <Select value={paymentPatientId || ''} onValueChange={v => setPaymentPatientId(v)}>
+                      <SelectTrigger className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800"><SelectValue placeholder="Choose a patient" /></SelectTrigger>
+                      <SelectContent>
+                        {patients.filter(p => p.status === 'active').map(p => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name} ({p.patient_id}) — {formatCurrency(p.remaining_amount)} due
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {paymentPatientId && (
+                  <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl text-sm">
+                    {(() => {
+                      const p = patients.find(pt => pt.id === paymentPatientId);
+                      return p ? (
+                        <div>
+                          <div className="flex justify-between items-start mb-2">
+                            <p className="font-bold text-blue-900 text-base">{p.name}</p>
+                            <Button type="button" variant="ghost" size="sm" onClick={() => setPaymentPatientId('')} className="h-6 px-2 text-xs text-blue-600 hover:bg-blue-100">Change</Button>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-blue-100 text-xs">
+                            <div>
+                              <p className="text-blue-600/70 mb-0.5">Total</p>
+                              <p className="font-semibold text-blue-900">{formatCurrency(p.total_amount)}</p>
+                            </div>
+                            <div>
+                              <p className="text-blue-600/70 mb-0.5">Paid</p>
+                              <p className="font-semibold text-blue-900">{formatCurrency(p.amount_paid)}</p>
+                            </div>
+                            <div>
+                              <p className="text-blue-600/70 mb-0.5">Due</p>
+                              <p className="font-semibold text-red-600">{formatCurrency(p.remaining_amount)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Amount *</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={payForm.amount}
+                    onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))}
+                    placeholder="Enter amount"
+                    className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 text-lg font-semibold"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Payment Method</Label>
+                  <Select value={payForm.payment_method} onValueChange={v => setPayForm(f => ({ ...f, payment_method: v }))}>
+                    <SelectTrigger className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="upi">UPI</SelectItem>
+                      <SelectItem value="card">Card</SelectItem>
+                      <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Notes</Label>
+                  <Input value={payForm.notes} onChange={e => setPayForm(f => ({ ...f, notes: e.target.value }))} className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800" placeholder="Optional notes" />
+                </div>
+                
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
+                  <Button type="button" variant="ghost" onClick={() => setActiveTab('payments')} className="h-14 px-8 text-base font-semibold">
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting || !paymentPatientId || !payForm.amount}
+                    className="h-14 px-10 text-base font-bold bg-gradient-to-r from-blue-600 to-teal-500 text-white rounded-full shadow-lg shadow-blue-500/20 hover:scale-105 transition-all"
+                  >
+                    {isSubmitting ? 'Recording...' : 'Record Payment'}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
-
-      {/* PATIENT DIALOG */}
-      <Dialog open={patientDialog} onOpenChange={setPatientDialog}>
-        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editPatient ? 'Edit Patient' : 'Add New Patient'}</DialogTitle>
-            <DialogDescription>{editPatient ? 'Update patient information' : 'Register a new patient visit'}</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={savePatient} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Name *</Label>
-              <Input value={pForm.name} onChange={e => setPForm(f => ({ ...f, name: e.target.value }))} required />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Phone *</Label>
-              <Input value={pForm.phone} onChange={e => setPForm(f => ({ ...f, phone: e.target.value }))} required />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Age</Label>
-                <Input type="number" value={pForm.age} onChange={e => setPForm(f => ({ ...f, age: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Gender</Label>
-                <Select value={pForm.gender || '_none'} onValueChange={v => setPForm(f => ({ ...f, gender: v === '_none' ? '' : v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">Not specified</SelectItem>
-                    <SelectItem value="male">Male</SelectItem>
-                    <SelectItem value="female">Female</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Address</Label>
-              <Textarea value={pForm.address} onChange={e => setPForm(f => ({ ...f, address: e.target.value }))} className="resize-none h-16" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Collection Type</Label>
-                <Select value={pForm.collection_type} onValueChange={v => setPForm(f => ({ ...f, collection_type: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="home_collection">Home Collection</SelectItem>
-                    <SelectItem value="lab_visit">Lab Visit</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Booking Date</Label>
-                <Input type="date" value={pForm.booking_date} onChange={e => setPForm(f => ({ ...f, booking_date: e.target.value }))} />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Total Amount</Label>
-              <Input type="number" value={pForm.total_amount} onChange={e => setPForm(f => ({ ...f, total_amount: e.target.value }))} placeholder="0" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Tests (comma separated)</Label>
-              <Textarea value={pForm.tests_text} onChange={e => setPForm(f => ({ ...f, tests_text: e.target.value }))} placeholder="CBC, Lipid Profile, Thyroid" className="resize-none h-16" />
-            </div>
-            {editPatient && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Test Status</Label>
-                  <Select
-                    value={editPatient.test_status}
-                    onValueChange={v => { updatePatientStatus(editPatient.id, 'test_status', v); setEditPatient({ ...editPatient, test_status: v as any }); }}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {['booked', 'collection_pending', 'sample_collected', 'testing', 'report_ready', 'completed'].map(s => (
-                        <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Report Status</Label>
-                  <Select
-                    value={editPatient.report_status}
-                    onValueChange={v => { updatePatientStatus(editPatient.id, 'report_status', v); setEditPatient({ ...editPatient, report_status: v as any }); }}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="not_uploaded">Not Uploaded</SelectItem>
-                      <SelectItem value="uploaded">Uploaded</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
-            <Button type="submit" disabled={isSubmitting} className="w-full bg-gradient-to-r from-blue-600 to-teal-500 text-white">
-              {isSubmitting ? 'Saving...' : editPatient ? 'Update Patient' : 'Add Patient'}
-            </Button>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* TEST DIALOG */}
-      <Dialog open={testDialog} onOpenChange={setTestDialog}>
-        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editTest ? 'Edit Test' : 'Add New Test'}</DialogTitle>
-            <DialogDescription>{editTest ? 'Update test details' : 'Add a new test to the catalogue'}</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={saveTest} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Test Name *</Label>
-              <Input value={tForm.name} onChange={e => setTForm(f => ({ ...f, name: e.target.value }))} required />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Price *</Label>
-                <Input type="number" value={tForm.price} onChange={e => setTForm(f => ({ ...f, price: e.target.value }))} required />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Category</Label>
-                <Input value={tForm.category} onChange={e => setTForm(f => ({ ...f, category: e.target.value }))} placeholder="e.g. Blood, Urine" />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Report Delivery Time</Label>
-              <Input value={tForm.report_delivery_time} onChange={e => setTForm(f => ({ ...f, report_delivery_time: e.target.value }))} placeholder="e.g. 24 hours" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Description</Label>
-              <Textarea value={tForm.description} onChange={e => setTForm(f => ({ ...f, description: e.target.value }))} className="resize-none h-16" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Preparation Instructions</Label>
-              <Textarea value={tForm.preparation_instructions} onChange={e => setTForm(f => ({ ...f, preparation_instructions: e.target.value }))} placeholder="e.g. Fasting 10-12 hrs required" className="resize-none h-16" />
-            </div>
-            <div className="flex items-center gap-2">
-              <input type="checkbox" id="is_active" checked={tForm.is_active} onChange={e => setTForm(f => ({ ...f, is_active: e.target.checked }))} className="rounded" />
-              <Label htmlFor="is_active" className="text-sm">Active</Label>
-            </div>
-            <Button type="submit" disabled={isSubmitting} className="w-full bg-gradient-to-r from-blue-600 to-teal-500 text-white">
-              {isSubmitting ? 'Saving...' : editTest ? 'Update Test' : 'Add Test'}
-            </Button>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* PAYMENT DIALOG */}
-      <Dialog open={paymentDialog} onOpenChange={(open) => { setPaymentDialog(open); if (!open) { setPaymentPatientId(''); setPayForm({ amount: '', payment_method: 'cash', notes: '' }); } }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Record Payment</DialogTitle>
-            <DialogDescription>Add a payment record for a patient</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={savePayment} className="space-y-4">
-            {/* Patient selector shown when opened from Payments tab (no pre-selected patient) */}
-            {!paymentPatientId && (
-              <div className="space-y-1.5">
-                <Label>Select Patient *</Label>
-                <Select value={paymentPatientId || ''} onValueChange={v => setPaymentPatientId(v)}>
-                  <SelectTrigger><SelectValue placeholder="Choose a patient" /></SelectTrigger>
-                  <SelectContent>
-                    {patients.filter(p => p.status === 'active').map(p => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name} ({p.patient_id}) — {formatCurrency(p.remaining_amount)} due
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            {paymentPatientId && (
-              <div className="p-3 bg-blue-50 rounded-lg text-sm">
-                {(() => {
-                  const p = patients.find(pt => pt.id === paymentPatientId);
-                  return p ? (
-                    <div>
-                      <p className="font-semibold text-blue-800">{p.name}</p>
-                      <p className="text-blue-600 text-xs mt-0.5">
-                        Total: {formatCurrency(p.total_amount)} | Paid: {formatCurrency(p.amount_paid)} | Due: {formatCurrency(p.remaining_amount)}
-                      </p>
-                    </div>
-                  ) : null;
-                })()}
-              </div>
-            )}
-            <div className="space-y-1.5">
-              <Label>Amount *</Label>
-              <Input
-                type="number"
-                min="1"
-                value={payForm.amount}
-                onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))}
-                placeholder="Enter amount"
-                required
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Payment Method</Label>
-              <Select value={payForm.payment_method} onValueChange={v => setPayForm(f => ({ ...f, payment_method: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="upi">UPI</SelectItem>
-                  <SelectItem value="card">Card</SelectItem>
-                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Notes</Label>
-              <Input value={payForm.notes} onChange={e => setPayForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional" />
-            </div>
-            <Button
-              type="submit"
-              disabled={isSubmitting || !paymentPatientId || !payForm.amount}
-              className="w-full bg-gradient-to-r from-blue-600 to-teal-500 text-white"
-            >
-              {isSubmitting ? 'Recording...' : 'Record Payment'}
-            </Button>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

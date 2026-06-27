@@ -62,6 +62,7 @@ export interface AppointmentRequest {
   name: string;
   phone: string;
   address: string | null;
+  location: string | null;
   requested_tests: string | null;
   preferred_date: string | null;
   collection_type: string | null;
