@@ -174,11 +174,22 @@ export default function BookingPage() {
       setError('Provide an address or allow location access.');
       return;
     }
+    const now = new Date();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    
+    // Check if it's past 5 PM for same-day booking
     const selectedDate = new Date(form.booking_date);
-    if (selectedDate < today) {
+    const selectedDateOnly = new Date(selectedDate);
+    selectedDateOnly.setHours(0, 0, 0, 0);
+    
+    if (selectedDateOnly.getTime() < today.getTime()) {
       setError('Please choose today or a future date.');
+      return;
+    }
+    
+    if (selectedDateOnly.getTime() === today.getTime() && now.getHours() >= 17) {
+      setError('Same-day bookings are closed after 5:00 PM. Please select tomorrow.');
       return;
     }
     if (!selectedTests.length && !form.tests_text.trim()) {
@@ -375,7 +386,11 @@ export default function BookingPage() {
                         <Input
                           id="booking_date"
                           type="date"
-                          min={new Date().toISOString().split('T')[0]}
+                          min={(() => {
+                            const d = new Date();
+                            if (d.getHours() >= 17) d.setDate(d.getDate() + 1);
+                            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                          })()}
                           value={form.booking_date}
                           onClick={(e) => {
                             if ('showPicker' in e.currentTarget) {
@@ -383,9 +398,9 @@ export default function BookingPage() {
                             }
                           }}
                           onChange={(event) => setForm({ ...form, booking_date: event.target.value })}
-                          className="w-full h-12 rounded-2xl border-2 border-white bg-white/50 px-4 pl-12 text-slate-900 shadow-sm backdrop-blur-md focus:border-blue-500 focus:bg-white transition-all cursor-pointer [color-scheme:light]"
+                          className="w-full h-12 rounded-2xl border-2 border-white bg-white/50 px-4 pl-12 text-slate-900 shadow-sm backdrop-blur-md focus:border-slate-500 focus:bg-white transition-all cursor-pointer [color-scheme:light]"
                         />
-                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-600 pointer-events-none" />
+                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-900 pointer-events-none" />
                       </div>
                     </div>
                   </div>
