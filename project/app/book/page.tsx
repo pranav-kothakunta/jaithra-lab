@@ -378,7 +378,7 @@ export default function BookingPage() {
                         min={new Date().toISOString().split('T')[0]}
                         value={form.booking_date}
                         onChange={(event) => setForm({ ...form, booking_date: event.target.value })}
-                        className="h-12 rounded-2xl border-2 border-white bg-white/50 px-4 shadow-sm backdrop-blur-md focus:border-blue-500 focus:bg-white transition-all"
+                        className="w-full h-12 rounded-2xl border-2 border-white bg-white/50 px-4 text-slate-900 shadow-sm backdrop-blur-md focus:border-blue-500 focus:bg-white transition-all cursor-pointer [color-scheme:light]"
                       />
                     </div>
                   </div>
