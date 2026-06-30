@@ -21,6 +21,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
     }
 
+    if (apt.status === 'converted') {
+      return NextResponse.json({ error: 'Appointment is already converted' }, { status: 400 });
+    }
+
     // 2. Map requested tests and calculate total
     let totalAmount = 0;
     const testsArray: any[] = [];

@@ -242,6 +242,8 @@ export default function AdminDashboard() {
   };
 
   const convertAppointment = async (apt: AppointmentRequest) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
       const res = await fetch('/api/admin/convert-appointment', {
         method: 'POST',
@@ -257,6 +259,8 @@ export default function AdminDashboard() {
       }
     } catch (err) {
       console.error('Convert Error:', err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -270,10 +274,10 @@ export default function AdminDashboard() {
   const openEditPatient = (p: Patient) => {
     setEditPatient(p);
     setPatientFormError('');
-    const testsText = p.tests?.map(t => t.test_name).join(', ') || '';
+    const testsText = p.patient_tests?.map(t => t.test_name).join(', ') || '';
     // Auto-calculate total from patient_tests prices, fallback to catalog lookup
-    const testsTotal = p.tests && p.tests.length > 0
-      ? p.tests.reduce((sum, t) => sum + Number(t.price || 0), 0)
+    const testsTotal = p.patient_tests && p.patient_tests.length > 0
+      ? p.patient_tests.reduce((sum, t) => sum + Number(t.price || 0), 0)
       : 0;
     const finalTotal = testsTotal > 0 ? testsTotal.toString() : calcTotalFromTests(testsText);
     setPForm({
@@ -759,8 +763,8 @@ export default function AdminDashboard() {
                         </div>
                       )}
                       {apt.status === 'confirmed' && (
-                        <Button size="sm" onClick={() => convertAppointment(apt)} className="bg-gradient-to-r from-blue-600 to-teal-500 text-white">
-                          <ArrowRight className="w-3 h-3 mr-1" />Convert to Patient
+                        <Button size="sm" onClick={() => convertAppointment(apt)} disabled={isSubmitting} className="bg-gradient-to-r from-blue-600 to-teal-500 text-white">
+                          <ArrowRight className="w-3 h-3 mr-1" />{isSubmitting ? 'Converting...' : 'Convert to Patient'}
                         </Button>
                       )}
                     </div>
@@ -827,22 +831,18 @@ export default function AdminDashboard() {
                           <td className="py-3 px-4">
                             <span className="text-xs capitalize text-gray-600 dark:text-gray-300">{p.collection_type?.replace('_', ' ')}</span>
                             <p className="text-xs text-gray-400">{formatDate(p.booking_date)}</p>
-                            {p.collection_type === 'lab_visit' && (
-                              <a href="https://maps.app.goo.gl/XQNAahxHV4H5as7z5" target="_blank" rel="noopener noreferrer" className="text-xs flex items-center gap-1 mt-1 text-teal-600 dark:text-teal-400 hover:underline w-max">
-                                <MapPin className="w-3 h-3" /> Lab Location
-                              </a>
-                            )}
                           </td>
                           <td className="py-3 px-4">
                             {(() => {
-                              const testsTotal = p.tests && p.tests.length > 0 ? p.tests.reduce((s, t) => s + Number(t.price || 0), 0) : 0;
+                              const testsTotal = p.patient_tests && p.patient_tests.length > 0 ? p.patient_tests.reduce((s, t) => s + Number(t.price || 0), 0) : 0;
                               const displayTotal = testsTotal > 0 ? testsTotal : p.total_amount;
+                              const displayRemaining = Math.max(0, displayTotal - (p.amount_paid || 0));
                               return (
                                 <>
                                   <p className="font-medium text-gray-900 dark:text-white">{formatCurrency(displayTotal)}</p>
                                   <p className="text-xs text-gray-400">Paid: {formatCurrency(p.amount_paid)}</p>
-                                  {p.remaining_amount > 0 && (
-                                    <p className="text-xs text-red-500 font-medium">Due: {formatCurrency(p.remaining_amount)}</p>
+                                  {displayRemaining > 0 && (
+                                    <p className="text-xs text-red-500 font-medium">Due: {formatCurrency(displayRemaining)}</p>
                                   )}
                                 </>
                               );
@@ -1418,23 +1418,26 @@ export default function AdminDashboard() {
                           </div>
                           <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-blue-100 text-xs">
                             {(() => {
-                              const testsTotal = p.tests && p.tests.length > 0 ? p.tests.reduce((s, t) => s + Number(t.price || 0), 0) : 0;
+                              const testsTotal = p.patient_tests && p.patient_tests.length > 0 ? p.patient_tests.reduce((s, t) => s + Number(t.price || 0), 0) : 0;
                               const displayTotal = testsTotal > 0 ? testsTotal : p.total_amount;
+                              const displayRemaining = Math.max(0, displayTotal - (p.amount_paid || 0));
                               return (
-                                <div>
-                                  <p className="text-blue-600/70 mb-0.5">Total</p>
-                                  <p className="font-semibold text-blue-900">{formatCurrency(displayTotal)}</p>
-                                </div>
+                                <>
+                                  <div>
+                                    <p className="text-blue-600/70 mb-0.5">Total</p>
+                                    <p className="font-semibold text-blue-900">{formatCurrency(displayTotal)}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-blue-600/70 mb-0.5">Paid</p>
+                                    <p className="font-semibold text-blue-900">{formatCurrency(p.amount_paid)}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-blue-600/70 mb-0.5">Due</p>
+                                    <p className="font-semibold text-red-600">{formatCurrency(displayRemaining)}</p>
+                                  </div>
+                                </>
                               );
                             })()}
-                            <div>
-                              <p className="text-blue-600/70 mb-0.5">Paid</p>
-                              <p className="font-semibold text-blue-900">{formatCurrency(p.amount_paid)}</p>
-                            </div>
-                            <div>
-                              <p className="text-blue-600/70 mb-0.5">Due</p>
-                              <p className="font-semibold text-red-600">{formatCurrency(p.remaining_amount)}</p>
-                            </div>
                           </div>
                         </div>
                       ) : null;
