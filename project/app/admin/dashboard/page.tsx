@@ -1168,32 +1168,33 @@ export default function AdminDashboard() {
         {/* REPORTS TAB */}
         {activeTab === 'reports' && (
           <div className="space-y-5">
-            {/* Patients needing reports */}
+            {/* All patients report status */}
             <div>
               <h3 className="text-base font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-orange-500" />
-                Pending Report Upload
-                <span className="text-xs font-normal text-gray-400">({patients.filter(p => p.report_status === 'not_uploaded' && p.status === 'active').length} patients)</span>
+                <FileText className="w-4 h-4 text-blue-500" />
+                Patient Reports
+                <span className="text-xs font-normal text-gray-400">({patients.filter(p => p.status === 'active').length} active patients)</span>
               </h3>
-              {patients.filter(p => p.report_status === 'not_uploaded' && p.status === 'active').length === 0 ? (
-                <div className="bg-green-50 border border-green-100 rounded-xl p-4 flex items-center gap-3 text-green-700">
-                  <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                  <p className="text-sm font-medium">All active patients have reports uploaded.</p>
+              {patients.filter(p => p.status === 'active').length === 0 ? (
+                <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 flex items-center gap-3 text-gray-500">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                  <p className="text-sm font-medium">No active patients found.</p>
                 </div>
               ) : (
                 <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-gray-100 dark:border-slate-800 bg-orange-50/50">
+                        <tr className="border-b border-gray-100 dark:border-slate-800 bg-blue-50/50">
                           <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Patient</th>
                           <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Booking Date</th>
                           <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Test Status</th>
-                          <th className="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Upload</th>
+                          <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Report Status</th>
+                          <th className="text-right py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">Action</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {patients.filter(p => p.report_status === 'not_uploaded' && p.status === 'active').map(p => (
+                        {patients.filter(p => p.status === 'active').map(p => (
                           <tr key={p.id} className="border-b border-gray-50 dark:border-slate-800 hover:bg-gray-50/50 dark:hover:bg-slate-900/50 dark:bg-slate-900/50">
                             <td className="py-3 px-4">
                               <p className="font-semibold text-gray-900 dark:text-white">{p.name}</p>
@@ -1205,18 +1206,33 @@ export default function AdminDashboard() {
                                 {p.test_status?.replace(/_/g, ' ')}
                               </span>
                             </td>
+                            <td className="py-3 px-4">
+                              {p.report_status === 'uploaded' ? (
+                                <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-semibold bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-400">
+                                  <CheckCircle2 className="w-3 h-3" />Uploaded
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-semibold bg-orange-100 text-orange-700 dark:bg-orange-950/50 dark:text-orange-400">
+                                  <AlertCircle className="w-3 h-3" />Pending
+                                </span>
+                              )}
+                            </td>
                             <td className="py-3 px-4 text-right">
                               {uploadProgress[p.id] === 'uploading' ? (
                                 <span className="text-xs text-blue-600 flex items-center gap-1 justify-end">
                                   <Clock className="w-3 h-3 animate-spin" />Uploading...
                                 </span>
                               ) : uploadProgress[p.id] === 'done' ? (
-                                <span className="text-xs text-green-600 flex items-center gap-1 justify-end">
+                                <span className="text-xs text-green-600 flex items-center gap-1 justify-end font-semibold">
                                   <CheckCircle2 className="w-3 h-3" />Done!
                                 </span>
+                              ) : uploadProgress[p.id] === 'error' ? (
+                                <span className="text-xs text-red-600 flex items-center gap-1 justify-end">
+                                  <XCircle className="w-3 h-3" />Failed — try again
+                                </span>
                               ) : (
-                                <Button size="sm" onClick={() => triggerReportUpload(p.id)} className="bg-gradient-to-r from-blue-600 to-teal-500 text-white h-8">
-                                  <Upload className="w-3 h-3 mr-1" />Upload PDF
+                                <Button size="sm" onClick={() => triggerReportUpload(p.id)} className={`h-8 ${p.report_status === 'uploaded' ? 'bg-gray-500 hover:bg-gray-600 text-white' : 'bg-gradient-to-r from-blue-600 to-teal-500 text-white'}`}>
+                                  <Upload className="w-3 h-3 mr-1" />{p.report_status === 'uploaded' ? 'Re-upload' : 'Upload PDF'}
                                 </Button>
                               )}
                             </td>
