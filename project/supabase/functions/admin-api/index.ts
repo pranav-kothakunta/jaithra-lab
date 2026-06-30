@@ -172,12 +172,15 @@ Deno.serve(async (req: Request) => {
 
     if (action === "patients" && req.method === "POST") {
       const body = await req.json();
-      const { name, phone, age, gender, address, location, booking_date, collection_type, total_amount, tests } = body;
+      const { name, phone, age, gender, address, location, booking_date, collection_type, total_amount, amount_paid, tests } = body;
       if (!name || !phone) return json({ error: "Name and phone required" }, 400);
 
       const now = new Date();
       const pid = `PAT-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}-${Math.random().toString(36).substring(2,6).toUpperCase()}`;
       const amount = Number(total_amount || 0);
+      const paid = Number(amount_paid || 0);
+      const remaining = amount - paid;
+      const paymentStatus = paid >= amount && amount > 0 ? "paid" : paid > 0 ? "partial" : "unpaid";
 
       const { data: patient, error } = await supabase.from("patients").insert({
         patient_id: pid, name, phone,
@@ -185,8 +188,8 @@ Deno.serve(async (req: Request) => {
         address: address || null, location: location || null,
         booking_date: booking_date || now.toISOString().split("T")[0],
         collection_type: collection_type || "home_collection",
-        total_amount: amount, amount_paid: 0, remaining_amount: amount,
-        payment_status: "unpaid", test_status: "booked",
+        total_amount: amount, amount_paid: paid, remaining_amount: remaining,
+        payment_status: paymentStatus, test_status: "booked",
         report_status: "not_uploaded", whatsapp_status: "pending",
         status: "active",
       }).select().single();
@@ -199,20 +202,6 @@ Deno.serve(async (req: Request) => {
           test_name: t.test_name, price: Number(t.price || 0),
         }));
         await supabase.from("patient_tests").insert(pts);
-      }
-
-      // Also create an appointment request for admin to review
-      const { error: aptError } = await supabase.from("appointment_requests").insert({
-        name, phone, address: address || null, location: location || null,
-        collection_type: collection_type || "home_collection",
-        preferred_date: booking_date || new Date().toISOString().split("T")[0],
-        requested_tests: tests?.map((t: any) => t.test_name).join(", ") || null,
-        status: "new_request",
-        notes: `Auto-converted from booking. Patient ID: ${pid}`,
-      });
-
-      if (aptError) {
-        console.error("Appointment request insert failed", aptError);
       }
 
       const { error: notificationError } = await supabase.from("notifications").insert({

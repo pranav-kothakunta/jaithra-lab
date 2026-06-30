@@ -116,7 +116,7 @@ export default function AdminDashboard() {
   const [pForm, setPForm] = useState({
     name: '', phone: '', age: '', gender: '', address: '',
     collection_type: 'home_collection', booking_date: '',
-    total_amount: '', tests_text: '',
+    total_amount: '', amount_paid: '', tests_text: '',
   });
 
   // Test form
@@ -263,7 +263,7 @@ export default function AdminDashboard() {
   const openNewPatient = () => {
     setEditPatient(null);
     setPatientFormError('');
-    setPForm({ name: '', phone: '', age: '', gender: '', address: '', collection_type: 'home_collection', booking_date: new Date().toISOString().split('T')[0], total_amount: '', tests_text: '' });
+    setPForm({ name: '', phone: '', age: '', gender: '', address: '', collection_type: 'home_collection', booking_date: new Date().toISOString().split('T')[0], total_amount: '', amount_paid: '', tests_text: '' });
     setActiveTab('add_patient');
   };
 
@@ -285,6 +285,7 @@ export default function AdminDashboard() {
       collection_type: p.collection_type,
       booking_date: p.booking_date,
       total_amount: finalTotal,
+      amount_paid: p.amount_paid?.toString() || '0',
       tests_text: testsText,
     });
     setActiveTab('add_patient');
@@ -308,6 +309,7 @@ export default function AdminDashboard() {
         collection_type: pForm.collection_type,
         booking_date: pForm.booking_date || new Date().toISOString().split('T')[0],
         total_amount: Number(pForm.total_amount || 0),
+        amount_paid: Number(pForm.amount_paid || 0),
         tests: pForm.tests_text ? pForm.tests_text.split(',').map(t => {
           const name = t.trim();
           const catalogTest = tests.find(ct => ct.name.toLowerCase() === name.toLowerCase());
@@ -989,9 +991,15 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                     
-                    <div className="space-y-2">
-                      <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Total Amount <span className="text-xs font-normal text-slate-400">(auto-calculated from tests)</span></Label>
-                      <Input type="number" value={pForm.total_amount} readOnly className="h-12 rounded-xl bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 focus-visible:ring-blue-500 cursor-not-allowed font-semibold text-lg" placeholder="₹0" />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Total Amount <span className="text-xs font-normal text-slate-400">(auto-calculated)</span></Label>
+                        <Input type="number" value={pForm.total_amount} readOnly className="h-12 rounded-xl bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 focus-visible:ring-blue-500 cursor-not-allowed font-semibold text-lg" placeholder="₹0" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Amount Paid</Label>
+                        <Input type="number" value={pForm.amount_paid} onChange={e => setPForm(f => ({ ...f, amount_paid: e.target.value }))} className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 focus-visible:ring-blue-500 font-semibold text-lg text-blue-600" placeholder="₹0" />
+                      </div>
                     </div>
                     
                     <div className="space-y-2">
