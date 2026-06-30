@@ -403,37 +403,29 @@ export default function AdminDashboard() {
     setUploadProgress(p => ({ ...p, [patientId]: 'uploading' }));
 
     try {
-      // 1. Get signed upload URL
-      const urlRes = await apiFetch(`${API}/reports/upload-url`, {
-        method: 'POST',
-        body: JSON.stringify({ patient_id: patientId, file_name: file.name }),
-      });
-      if (!urlRes.ok) throw new Error('Failed to get upload URL');
-      const { signed_url, path } = await urlRes.json();
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('patient_id', patientId);
 
-      // 2. Upload file directly to Supabase Storage
-      const uploadRes = await fetch(signed_url, {
-        method: 'PUT',
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
-        body: file,
-      });
-      if (!uploadRes.ok) throw new Error('File upload failed');
-
-      // 3. Record in DB
-      const recordRes = await apiFetch(`${API}/reports`, {
+      const res = await fetch('/api/admin/upload-report', {
         method: 'POST',
-        body: JSON.stringify({ patient_id: patientId, file_name: file.name, file_url: path, file_size: file.size }),
+        body: formData,
       });
-      if (!recordRes.ok) throw new Error('Failed to record report');
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Upload failed');
+      }
 
       setUploadProgress(p => ({ ...p, [patientId]: 'done' }));
       loadPatients();
       loadReports();
       loadStats();
-      setTimeout(() => setUploadProgress(p => { const n = { ...p }; delete n[patientId]; return n; }), 3000);
-    } catch {
+      setTimeout(() => setUploadProgress(p => { const n = { ...p }; delete n[patientId]; return n; }), 4000);
+    } catch (err) {
+      console.error('Upload error:', err);
       setUploadProgress(p => ({ ...p, [patientId]: 'error' }));
-      setTimeout(() => setUploadProgress(p => { const n = { ...p }; delete n[patientId]; return n; }), 3000);
+      setTimeout(() => setUploadProgress(p => { const n = { ...p }; delete n[patientId]; return n; }), 4000);
     }
   };
 
