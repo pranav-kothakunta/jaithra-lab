@@ -45,6 +45,7 @@ export interface Patient {
   created_at: string;
   updated_at: string;
   tests?: PatientTest[];
+  patient_tests?: PatientTest[];
   report?: Report;
 }
 
