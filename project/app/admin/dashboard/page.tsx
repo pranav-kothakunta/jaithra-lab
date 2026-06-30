@@ -128,6 +128,18 @@ export default function AdminDashboard() {
   // Payment form
   const [payForm, setPayForm] = useState({ amount: '', payment_method: 'cash', notes: '' });
 
+  // Helper: calculate total amount from test names by looking up prices in tests catalog
+  const calcTotalFromTests = (testsText: string): string => {
+    if (!testsText.trim()) return '0';
+    const testNames = testsText.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+    let total = 0;
+    for (const name of testNames) {
+      const catalogTest = tests.find(t => t.name.toLowerCase() === name);
+      if (catalogTest) total += Number(catalogTest.price || 0);
+    }
+    return total.toString();
+  };
+
   // Search
   const [patientSearch, setPatientSearch] = useState('');
 
@@ -258,6 +270,12 @@ export default function AdminDashboard() {
   const openEditPatient = (p: Patient) => {
     setEditPatient(p);
     setPatientFormError('');
+    const testsText = p.tests?.map(t => t.test_name).join(', ') || '';
+    // Auto-calculate total from patient_tests prices, fallback to catalog lookup
+    const testsTotal = p.tests && p.tests.length > 0
+      ? p.tests.reduce((sum, t) => sum + Number(t.price || 0), 0)
+      : 0;
+    const finalTotal = testsTotal > 0 ? testsTotal.toString() : calcTotalFromTests(testsText);
     setPForm({
       name: p.name,
       phone: p.phone,
@@ -266,8 +284,8 @@ export default function AdminDashboard() {
       address: p.address || '',
       collection_type: p.collection_type,
       booking_date: p.booking_date,
-      total_amount: p.total_amount?.toString() || '',
-      tests_text: p.tests?.map(t => t.test_name).join(', ') || '',
+      total_amount: finalTotal,
+      tests_text: testsText,
     });
     setActiveTab('add_patient');
   };
@@ -290,7 +308,11 @@ export default function AdminDashboard() {
         collection_type: pForm.collection_type,
         booking_date: pForm.booking_date || new Date().toISOString().split('T')[0],
         total_amount: Number(pForm.total_amount || 0),
-        tests: pForm.tests_text ? pForm.tests_text.split(',').map(t => ({ test_name: t.trim(), price: 0 })) : [],
+        tests: pForm.tests_text ? pForm.tests_text.split(',').map(t => {
+          const name = t.trim();
+          const catalogTest = tests.find(ct => ct.name.toLowerCase() === name.toLowerCase());
+          return { test_name: name, price: catalogTest ? Number(catalogTest.price || 0) : 0 };
+        }) : [],
       };
       let res;
       if (editPatient) {
@@ -810,11 +832,19 @@ export default function AdminDashboard() {
                             )}
                           </td>
                           <td className="py-3 px-4">
-                            <p className="font-medium text-gray-900 dark:text-white">{formatCurrency(p.total_amount)}</p>
-                            <p className="text-xs text-gray-400">Paid: {formatCurrency(p.amount_paid)}</p>
-                            {p.remaining_amount > 0 && (
-                              <p className="text-xs text-red-500 font-medium">Due: {formatCurrency(p.remaining_amount)}</p>
-                            )}
+                            {(() => {
+                              const testsTotal = p.tests && p.tests.length > 0 ? p.tests.reduce((s, t) => s + Number(t.price || 0), 0) : 0;
+                              const displayTotal = testsTotal > 0 ? testsTotal : p.total_amount;
+                              return (
+                                <>
+                                  <p className="font-medium text-gray-900 dark:text-white">{formatCurrency(displayTotal)}</p>
+                                  <p className="text-xs text-gray-400">Paid: {formatCurrency(p.amount_paid)}</p>
+                                  {p.remaining_amount > 0 && (
+                                    <p className="text-xs text-red-500 font-medium">Due: {formatCurrency(p.remaining_amount)}</p>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </td>
                           <td className="py-3 px-4">
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${paymentStatusColor[p.payment_status] || ''}`}>
@@ -960,13 +990,13 @@ export default function AdminDashboard() {
                     </div>
                     
                     <div className="space-y-2">
-                      <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Total Amount</Label>
-                      <Input type="number" value={pForm.total_amount} onChange={e => setPForm(f => ({ ...f, total_amount: e.target.value }))} className="h-12 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 focus-visible:ring-blue-500" placeholder="₹0" />
+                      <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Total Amount <span className="text-xs font-normal text-slate-400">(auto-calculated from tests)</span></Label>
+                      <Input type="number" value={pForm.total_amount} readOnly className="h-12 rounded-xl bg-slate-100 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 focus-visible:ring-blue-500 cursor-not-allowed font-semibold text-lg" placeholder="₹0" />
                     </div>
                     
                     <div className="space-y-2">
                       <Label className="text-sm font-semibold text-slate-700 dark:text-slate-200">Requested Tests</Label>
-                      <Textarea value={pForm.tests_text} onChange={e => setPForm(f => ({ ...f, tests_text: e.target.value }))} placeholder="e.g. CBC, Lipid Profile, Thyroid" className="resize-none h-32 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 focus-visible:ring-blue-500" />
+                      <Textarea value={pForm.tests_text} onChange={e => { const val = e.target.value; setPForm(f => ({ ...f, tests_text: val, total_amount: calcTotalFromTests(val) })); }} placeholder="e.g. CBC, Lipid Profile, Thyroid" className="resize-none h-32 rounded-xl bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800 focus-visible:ring-blue-500" />
                     </div>
                     
                     {editPatient && (
@@ -1363,10 +1393,16 @@ export default function AdminDashboard() {
                             <Button type="button" variant="ghost" size="sm" onClick={() => setPaymentPatientId('')} className="h-6 px-2 text-xs text-blue-600 hover:bg-blue-100">Change</Button>
                           </div>
                           <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-blue-100 text-xs">
-                            <div>
-                              <p className="text-blue-600/70 mb-0.5">Total</p>
-                              <p className="font-semibold text-blue-900">{formatCurrency(p.total_amount)}</p>
-                            </div>
+                            {(() => {
+                              const testsTotal = p.tests && p.tests.length > 0 ? p.tests.reduce((s, t) => s + Number(t.price || 0), 0) : 0;
+                              const displayTotal = testsTotal > 0 ? testsTotal : p.total_amount;
+                              return (
+                                <div>
+                                  <p className="text-blue-600/70 mb-0.5">Total</p>
+                                  <p className="font-semibold text-blue-900">{formatCurrency(displayTotal)}</p>
+                                </div>
+                              );
+                            })()}
                             <div>
                               <p className="text-blue-600/70 mb-0.5">Paid</p>
                               <p className="font-semibold text-blue-900">{formatCurrency(p.amount_paid)}</p>
